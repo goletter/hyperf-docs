@@ -20,10 +20,15 @@ class GoogleAuth
     /**
      * 生成授权 URL.
      */
-    public function getAuthUrl(): string
+    public function getAuthUrl(?string $state = null): string
     {
-        return $this->googleClient->request(function () {
-            return $this->getClient()->createAuthUrl();
+        return $this->googleClient->request(function () use ($state) {
+            $client = $this->getClient();
+            if ($state !== null && $state !== '') {
+                $client->setState($state);
+            }
+
+            return $client->createAuthUrl();
         });
     }
 

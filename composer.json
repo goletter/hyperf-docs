@@ -1,6 +1,6 @@
 {
   "name": "goletter/hyperf-docs",
-  "description": "Hyperf Google Docs / Sheets / Drive integration",
+  "description": "Hyperf Docs integration for Google Docs/Sheets/Drive and Tencent Docs",
   "license": "MIT",
   "type": "library",
   "authors": [
@@ -13,6 +13,7 @@
     "php",
     "hyperf",
     "google",
+    "tencent",
     "sheets",
     "docs",
     "drive"

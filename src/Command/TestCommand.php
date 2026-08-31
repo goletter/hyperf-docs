@@ -4,13 +4,18 @@ declare(strict_types=1);
 
 namespace Goletter\Docs\Command;
 
+use Goletter\Docs\Contract\PlatformInterface;
+use Goletter\Docs\DocsManager;
 use Goletter\Docs\Google\Exceptions\GoogleApiException;
-use Goletter\Docs\Google\GoogleAuth;
-use Goletter\Docs\Google\GoogleSheets;
+use Goletter\Docs\Platform\TencentPlatform;
+use Goletter\Docs\Tencent\Exceptions\TencentApiException;
 use Hyperf\Command\Annotation\Command;
 use Hyperf\Command\Command as HyperfCommand;
+use Hyperf\Contract\ConfigInterface;
 use Hyperf\Di\Annotation\Inject;
+use InvalidArgumentException;
 use Symfony\Component\Console\Input\InputOption;
+use Throwable;
 
 use function Hyperf\Support\env;
 
@@ -26,10 +31,10 @@ class TestCommand extends HyperfCommand
     private const DEFAULT_DRIVE_ROOT_FOLDER = 'Goletter';
 
     #[Inject]
-    protected GoogleAuth $auth;
+    protected DocsManager $docs;
 
     #[Inject]
-    protected GoogleSheets $sheets;
+    protected ConfigInterface $config;
 
     public function __construct()
     {
@@ -41,38 +46,54 @@ class TestCommand extends HyperfCommand
         parent::configure();
 
         $this
-            ->setDescription('测试 Google OAuth、Sheets、Drive 集成')
-            ->addOption('auth-url', null, InputOption::VALUE_NONE, '只输出 Google OAuth 授权地址')
-            ->addOption('token', null, InputOption::VALUE_OPTIONAL, 'Google OAuth access token')
+            ->setDescription('测试文档平台（Google / 腾讯）OAuth、表格、目录、分享')
+            ->addOption('platform', 'p', InputOption::VALUE_OPTIONAL, '平台：google / tencent，默认取 docs.default')
+            ->addOption('auth-url', null, InputOption::VALUE_NONE, '只输出 OAuth 授权地址')
+            ->addOption('token', null, InputOption::VALUE_OPTIONAL, 'OAuth access token')
+            ->addOption('open-id', null, InputOption::VALUE_OPTIONAL, '腾讯文档 Open-Id（user_id）')
             ->addOption('title', null, InputOption::VALUE_OPTIONAL, '测试表格标题')
-            ->addOption('folder', null, InputOption::VALUE_OPTIONAL, 'Drive 根目录名称');
+            ->addOption('folder', null, InputOption::VALUE_OPTIONAL, '根目录名称');
     }
 
     public function handle(): int
     {
         try {
+            $platformName = $this->platformName();
+            $platform = $this->docs->platform($platformName);
+
             if ((bool) $this->input->getOption('auth-url')) {
-                $this->line($this->auth->getAuthUrl());
+                $this->line($platform->auth()->getAuthUrl('docs-test'));
 
                 return self::SUCCESS;
             }
 
-            $accessToken = $this->accessToken();
-            if ($accessToken === '') {
-                $this->error('缺少 Google access token，请通过 --token 或 GOOGLE_TOKEN 传入。');
-                $this->line('授权地址：' . $this->auth->getAuthUrl());
+            $token = $this->tokenPayload($platformName);
+            if ($token['access_token'] === '') {
+                $this->error(sprintf(
+                    '缺少 access token，请通过 --token 或环境变量传入（Google: GOOGLE_TOKEN，腾讯: TENCENT_DOCS_TOKEN）。'
+                ));
+                if ($platformName === TencentPlatform::NAME) {
+                    $this->line('腾讯文档还需 --open-id 或 TENCENT_DOCS_OPEN_ID。');
+                }
+                $this->line('授权地址：' . $platform->auth()->getAuthUrl('docs-test'));
 
                 return self::FAILURE;
             }
 
-            $result = $this->runSheetsDemo($accessToken);
+            if ($platformName === TencentPlatform::NAME && ($token['open_id'] ?? '') === '') {
+                $this->error('腾讯文档缺少 open_id，请通过 --open-id 或 TENCENT_DOCS_OPEN_ID 传入。');
 
-            $this->info('Google Docs 测试完成');
+                return self::FAILURE;
+            }
+
+            $result = $this->runSheetsDemo($platform, $token);
+
+            $this->info(sprintf('[%s] Docs 测试完成', $platformName));
             $this->line($this->toJson($result));
 
             return self::SUCCESS;
-        } catch (GoogleApiException $e) {
-            $this->error('Google API 调用失败');
+        } catch (GoogleApiException|TencentApiException $e) {
+            $this->error('Docs API 调用失败');
             $this->line($this->toJson([
                 'code' => $e->getCode(),
                 'message' => $e->getMessage(),
@@ -80,92 +101,78 @@ class TestCommand extends HyperfCommand
             ]));
 
             return self::FAILURE;
+        } catch (Throwable $e) {
+            $this->error($e->getMessage());
+
+            return self::FAILURE;
         }
     }
 
     /**
-     * @return array{
-     *     spreadsheet_id: string,
-     *     sheet_titles: list<string>,
-     *     sheet_gids: array<string, int>,
-     *     folder: array,
-     *     spreadsheet_url: string,
-     *     share_url: string,
-     *     permission: string,
-     *     share_permission: object|array
-     * }
+     * @param array{access_token: string, open_id?: string} $token
+     * @return array<string, mixed>
      */
-    private function runSheetsDemo(string $accessToken): array
+    private function runSheetsDemo(PlatformInterface $platform, array $token): array
     {
-        $sheetGids = $this->sheetGids();
-        $sheets = $this->sampleSheets($sheetGids);
-        $spreadsheet = $this->sheets->createSpreadsheet($accessToken, $this->spreadsheetTitle());
-        $spreadsheetId = $spreadsheet->getSpreadsheetId();
+        $sheets = $platform->sheets();
+        $titles = [self::DEFAULT_SHEET, 'Sheet2', 'Sheet3'];
+        $sample = $this->sampleSheets();
 
-        if (! is_string($spreadsheetId) || $spreadsheetId === '') {
-            throw new GoogleApiException('创建电子表格失败：响应中缺少 spreadsheetId', 500, [
-                'spreadsheet' => $spreadsheet->toSimpleObject(),
-            ]);
+        $file = $sheets->createSpreadsheet($token, $this->spreadsheetTitle());
+        $spreadsheetId = (string) ($file['id'] ?? '');
+        if ($spreadsheetId === '') {
+            throw new InvalidArgumentException('创建表格失败：响应中缺少 id');
         }
 
-        $this->ensureSheets($accessToken, $spreadsheetId, $sheetGids);
-        $this->sheets->batchWrite($accessToken, $spreadsheetId, $this->buildBatchData($sheets));
+        foreach ($titles as $title) {
+            if ($title === self::DEFAULT_SHEET) {
+                continue;
+            }
+            $sheets->addSheet($token, $spreadsheetId, $title);
+        }
 
-        $folder = $this->sheets->moveSpreadsheetToDateFolder(
-            $accessToken,
+        $batch = [];
+        foreach ($sample as $title => $values) {
+            $columns = max(1, ...array_map('count', $values));
+            $rows = count($values);
+            $batch[] = [
+                'range' => sprintf('%s!A1:%s%d', $title, $this->columnName($columns), $rows),
+                'values' => $values,
+            ];
+        }
+        $sheets->batchWrite($token, $spreadsheetId, $batch);
+
+        $folder = $sheets->moveSpreadsheetToDateFolder(
+            $token,
             $spreadsheetId,
-            $this->driveRootFolder()
+            $this->driveRootFolder($platform->name())
         );
-        $permission = $this->sheets->shareSpreadsheetForAnyoneReader($accessToken, $spreadsheetId);
-        $spreadsheetUrl = $this->spreadsheetUrl($spreadsheetId, $spreadsheet->getSpreadsheetUrl());
+        $permission = $sheets->shareSpreadsheetForAnyoneReader($token, $spreadsheetId);
+        $spreadsheetUrl = (string) ($file['url'] ?? '');
 
         return [
+            'platform' => $platform->name(),
             'spreadsheet_id' => $spreadsheetId,
-            'sheet_titles' => array_keys($sheets),
-            'sheet_gids' => $sheetGids,
+            'sheet_titles' => array_keys($sample),
             'folder' => $folder,
             'spreadsheet_url' => $spreadsheetUrl,
-            'share_url' => "{$spreadsheetUrl}?usp=sharing",
-            'permission' => 'anyone_with_link_reader',
-            'share_permission' => $permission->toSimpleObject(),
+            'share_permission' => $permission,
+            'raw' => $file['raw'] ?? null,
         ];
     }
 
     /**
-     * @return array<string, int>
-     */
-    private function sheetGids(): array
-    {
-        return [
-            self::DEFAULT_SHEET => 0,
-            'Sheet2' => 1001,
-            'Sheet3' => 1002,
-        ];
-    }
-
-    /**
-     * @param array<string, int> $sheetGids
      * @return array<string, list<list<string>>>
      */
-    private function sampleSheets(array $sheetGids): array
+    private function sampleSheets(): array
     {
         $header = ['姓名', '部门', '职位', '入职日期'];
 
         return [
             self::DEFAULT_SHEET => [
                 $header,
-                [
-                    '张三',
-                    '技术部',
-                    '高级工程师',
-                    $this->sheetHyperlink($sheetGids['Sheet2'], '2024-01-15'),
-                ],
-                [
-                    '李四',
-                    '产品部',
-                    $this->sheetHyperlink($sheetGids['Sheet3'], '产品经理'),
-                    '2024-02-20',
-                ],
+                ['张三', '技术部', '高级工程师', '2024-01-15'],
+                ['李四', '产品部', '产品经理', '2024-02-20'],
                 ['王五', '设计部', 'UI设计师', '2024-03-10'],
             ],
             'Sheet2' => [
@@ -181,44 +188,33 @@ class TestCommand extends HyperfCommand
         ];
     }
 
-    /**
-     * @param array<string, int> $sheetGids
-     */
-    private function ensureSheets(string $accessToken, string $spreadsheetId, array $sheetGids): void
+    private function platformName(): string
     {
-        foreach ($sheetGids as $title => $gid) {
-            if ($title === self::DEFAULT_SHEET) {
-                continue;
-            }
+        $platform = trim((string) ($this->input->getOption('platform') ?: ''));
 
-            $this->sheets->addSheet($accessToken, $spreadsheetId, $title, $gid);
-        }
+        return $platform !== '' ? $platform : $this->docs->getDefaultPlatform();
     }
 
     /**
-     * @param array<string, list<list<string>>> $sheets
-     * @return list<array{range: string, values: list<list<string>>}>
+     * @return array{access_token: string, open_id?: string}
      */
-    private function buildBatchData(array $sheets): array
+    private function tokenPayload(string $platformName): array
     {
-        $batchData = [];
-        foreach ($sheets as $title => $values) {
-            $columns = max(array_map('count', $values));
-            $rows = count($values);
-            $batchData[] = [
-                'range' => sprintf('%s!A1:%s%d', $title, $this->columnName($columns), $rows),
-                'values' => $values,
-            ];
+        $token = trim((string) ($this->input->getOption('token') ?: ''));
+        if ($token === '') {
+            $token = $platformName === TencentPlatform::NAME
+                ? trim((string) env('TENCENT_DOCS_TOKEN', ''))
+                : trim((string) env('GOOGLE_TOKEN', ''));
         }
 
-        return $batchData;
-    }
+        $payload = ['access_token' => $token];
 
-    private function accessToken(): string
-    {
-        $token = (string) ($this->input->getOption('token') ?: env('GOOGLE_TOKEN', ''));
+        if ($platformName === TencentPlatform::NAME) {
+            $openId = trim((string) ($this->input->getOption('open-id') ?: env('TENCENT_DOCS_OPEN_ID', '')));
+            $payload['open_id'] = $openId;
+        }
 
-        return trim($token);
+        return $payload;
     }
 
     private function spreadsheetTitle(): string
@@ -228,24 +224,20 @@ class TestCommand extends HyperfCommand
         return $title === '' ? self::DEFAULT_SPREADSHEET_TITLE : $title;
     }
 
-    private function driveRootFolder(): string
+    private function driveRootFolder(string $platformName): string
     {
-        $folder = trim((string) (
-            $this->input->getOption('folder')
-            ?: env('GOOGLE_DRIVE_ROOT_FOLDER_NAME', self::DEFAULT_DRIVE_ROOT_FOLDER)
-        ));
+        $folder = trim((string) ($this->input->getOption('folder') ?: ''));
+        if ($folder !== '') {
+            return $folder;
+        }
+
+        $configKey = $platformName === TencentPlatform::NAME
+            ? 'docs.platforms.tencent.drive_root_folder'
+            : 'docs.platforms.google.drive_root_folder';
+
+        $folder = trim((string) $this->config->get($configKey, self::DEFAULT_DRIVE_ROOT_FOLDER));
 
         return $folder === '' ? self::DEFAULT_DRIVE_ROOT_FOLDER : $folder;
-    }
-
-    private function spreadsheetUrl(string $spreadsheetId, ?string $spreadsheetUrl): string
-    {
-        return $spreadsheetUrl ?: "https://docs.google.com/spreadsheets/d/{$spreadsheetId}/edit";
-    }
-
-    private function sheetHyperlink(int $gid, string $label): string
-    {
-        return sprintf('=HYPERLINK("#gid=%d&range=A1", "%s")', $gid, $label);
     }
 
     private function columnName(int $columnNumber): string
