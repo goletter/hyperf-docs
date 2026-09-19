@@ -11,6 +11,7 @@ use GuzzleHttp\Exception\GuzzleException;
 use GuzzleHttp\Exception\RequestException;
 use Hyperf\Contract\ConfigInterface;
 use Hyperf\Di\Annotation\Inject;
+use Hyperf\Guzzle\ClientFactory;
 use Psr\Http\Message\ResponseInterface;
 
 class TencentClient
@@ -20,11 +21,15 @@ class TencentClient
     #[Inject]
     protected ConfigInterface $config;
 
+    #[Inject]
+    protected ClientFactory $clientFactory;
+
     protected ?GuzzleClient $http = null;
 
     public function http(): GuzzleClient
     {
-        return $this->http ??= new GuzzleClient([
+        // Hyperf ClientFactory：协程内走 CoroutineHandler，避免 libcurl 线程 DNS 触发 cURL error 6
+        return $this->http ??= $this->clientFactory->create([
             'base_uri' => self::BASE_URI,
             'timeout' => 30,
             'http_errors' => false,

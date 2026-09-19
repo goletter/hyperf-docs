@@ -9,15 +9,18 @@ use Google\Exception as GoogleException;
 use Google\Service\Exception as GoogleServiceException;
 use Goletter\Docs\Google\Exceptions\GoogleApiException;
 use Goletter\Docs\Google\Exceptions\GoogleTokenExpiredException;
-use GuzzleHttp\Client as GuzzleClient;
 use GuzzleHttp\Exception\RequestException;
 use Hyperf\Contract\ConfigInterface;
 use Hyperf\Di\Annotation\Inject;
+use Hyperf\Guzzle\ClientFactory;
 
 class GoogleClient
 {
     #[Inject]
     protected ConfigInterface $config;
+
+    #[Inject]
+    protected ClientFactory $clientFactory;
 
     /**
      * 创建已配置 OAuth 凭证的 Google Client（用于授权流程）。
@@ -106,10 +109,12 @@ class GoogleClient
     protected function createBaseClient(): Client
     {
         $client = new Client();
-        $client->setHttpClient(new GuzzleClient([
+        // Hyperf ClientFactory：协程内走 CoroutineHandler，避免 libcurl 线程 DNS 触发 cURL error 6
+        $client->setHttpClient($this->clientFactory->create([
             'headers' => [
                 'Accept-Encoding' => 'identity',
             ],
+            'timeout' => 30,
         ]));
 
         $apiKey = $this->option('api_key');
