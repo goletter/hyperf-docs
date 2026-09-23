@@ -142,6 +142,70 @@ class GooglePlatform implements PlatformInterface, AuthInterface, SheetsInterfac
         return $this->googleSheets->appendCells($this->accessToken($token), $spreadsheetId, $range, $values);
     }
 
+    public function insertAfterHeader(array $token, string $spreadsheetId, string $range, array $values): array
+    {
+        return $this->googleSheets->insertAfterHeader(
+            $this->accessToken($token),
+            $spreadsheetId,
+            $range,
+            $values,
+        );
+    }
+
+    public function upsertRows(
+        array $token,
+        string $spreadsheetId,
+        string $range,
+        array $values,
+        string|int|array $column,
+    ): array {
+        return $this->googleSheets->upsertRows(
+            $this->accessToken($token),
+            $spreadsheetId,
+            $range,
+            $values,
+            $column,
+        );
+    }
+
+    public function insertBlock(
+        array $token,
+        string $spreadsheetId,
+        string $range,
+        array $values,
+        int $dataStartRow = 2,
+        string $position = 'prepend',
+    ): array {
+        return $this->googleSheets->insertBlock(
+            $this->accessToken($token),
+            $spreadsheetId,
+            $range,
+            $values,
+            $dataStartRow,
+            $position,
+        );
+    }
+
+    public function upsertBlock(
+        array $token,
+        string $spreadsheetId,
+        string $range,
+        array $values,
+        string|int|array $column,
+        int $dataStartRow = 2,
+        string $position = 'prepend',
+    ): array {
+        return $this->googleSheets->upsertBlock(
+            $this->accessToken($token),
+            $spreadsheetId,
+            $range,
+            $values,
+            $column,
+            $dataStartRow,
+            $position,
+        );
+    }
+
     /**
      * URL #gid=xxx → 工作表标题.
      */

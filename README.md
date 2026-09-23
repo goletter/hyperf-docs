@@ -323,6 +323,105 @@ $result = $sheets->appendCells($token, $spreadsheetId, "gid:{$gid}", [
 
 含 `null` 时会先算下一空行，再只写有值的列（避开受保护列）。勾选列请传布尔 `true` / `false`，不要用 `''`。
 
+#### 插在表头下方（旧数据下推）
+
+```php
+// 单行 / 多行均可；始终插在第 1 行表头下面
+$result = $sheets->insertAfterHeader($token, $spreadsheetId, "gid:{$gid}", [
+    [null, null, null, null, '名称1', '111', null, true],
+    [null, null, null, null, '名称2', '222', null, true],
+]);
+/*
+[
+  'row' => 2,
+  'range' => "'Sheet'!A2:Z3",
+  'values' => [[...], [...]],
+]
+*/
+```
+
+#### 按条件 upsert（有则改，无则插到表头下）
+
+```php
+// 单列：按 F 列匹配
+$result = $sheets->upsertRows(
+    $token,
+    $spreadsheetId,
+    "gid:{$gid}",
+    [
+        [null, null, null, null, '名称1', '111', null, true],
+        [null, null, null, null, '名称2', '222', null, true],
+    ],
+    column: 'F',
+);
+
+// 多列 AND：E + F 都相等才算同一行
+$result = $sheets->upsertRows(
+    $token,
+    $spreadsheetId,
+    "gid:{$gid}",
+    [
+        [null, null, null, null, '名称1', '111', null, true],
+        [null, null, null, null, '名称2', '222', null, true],
+    ],
+    column: ['E', 'F'],
+);
+/*
+[
+  'updated' => [
+    ['row' => 5, 'range' => "...", 'values' => [...]],
+  ],
+  'inserted' => [          // 没有新行时为 null
+    'row' => 2,
+    'range' => "...",
+    'values' => [[...]],
+  ],
+]
+*/
+```
+
+#### 左右分块表（只动某一区块）
+
+`$values` 只含该区块列（首元素=区块首列）。默认行为与整表 `insertAfterHeader` / `upsertRows` 一致：**插在第 1 行表头下面、本区块旧数据下推、可批量**；有则改、无则插表头下。
+
+```php
+// 1) 表头下批量插入（默认 dataStartRow=2, position=prepend）
+$sheets->insertBlock($token, $spreadsheetId, "gid:{$gid}!J:O", [
+    ['2026/4/1', 2000, 1990, '水单', 1, '备注'],
+    ['2026/4/2', 3000, 2980, '', 1, ''],
+]);
+
+// 2) 有则改、无则插到表头下（可多条件）
+$sheets->upsertBlock(
+    $token,
+    $spreadsheetId,
+    "gid:{$gid}!A:E",
+    [
+        ['2026/9/24', 10.5, 0.5, null, null],
+        ['2026/9/23', 11, 0.6, null, null],
+    ],
+    column: 'A',          // 或多列 ['A', 'B'] / 相对下标 0
+);
+
+// 接到区块末尾（不插表头下）
+$sheets->insertBlock(..., position: 'append');
+$sheets->upsertBlock(..., column: 'P', position: 'append');
+```
+
+你这种「两行表头 + 合计」的表，数据从第 4 行起，显式传 `dataStartRow: 4`：
+
+```php
+$sheets->upsertBlock(
+    $token,
+    $spreadsheetId,
+    "gid:{$gid}!J:O",
+    [['2026/4/1', 2000, 1990, '水单', 1, '备注']],
+    column: 'J',
+    dataStartRow: 4,      // 跳过第 1～3 行表头/合计
+    position: 'prepend',  // 插到第 4 行，只挤 J:O
+);
+```
+
 #### 其它
 
 ```php
@@ -393,6 +492,10 @@ $this->sheets->shareSpreadsheetForAnyoneReader($accessToken, $openId, $spreadshe
 | 编辑指定行 | ✅ `updateRow`（行号 / 按列查找） | ✅ `updateRow` |
 | 删除指定行 | ✅ `deleteRow`（行号 / 按列查找） | ✅ `deleteRow` |
 | 追加行 | ✅ `appendCells` | ✅ `appendCells` |
+| 表头下插入 | ✅ `insertAfterHeader` | ✅ `insertAfterHeader` |
+| 按条件 upsert | ✅ `upsertRows` | ✅ `upsertRows` |
+| 列区块插入 | ✅ `insertBlock` | ✅ `insertBlock` |
+| 列区块 upsert | ✅ `upsertBlock` | ✅ `upsertBlock` |
 | 按列内容查找 | ✅ `findRows` | ✅ `findRows` |
 | gid / sheetId 定位 | ✅ URL `#gid=` | ✅ 标题或 sheetId |
 | 勾选框 | ✅ `true` / `false` | — |

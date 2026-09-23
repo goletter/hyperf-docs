@@ -452,6 +452,664 @@ class TencentSheets
     }
 
     /**
+     * 在表头（第 1 行）下方插入行，旧数据整体下推。支持批量.
+     *
+     * 腾讯开放接口未公开 insertDimension，采用「读取原数据行 + 合并写回 A2」实现下推.
+     *
+     * @param list<mixed>|list<list<mixed>> $values
+     * @return array{row: int, range: string, values: list<mixed>|list<list<mixed>>}
+     * @throws TencentApiException
+     */
+    public function insertAfterHeader(
+        string $accessToken,
+        string $openId,
+        string $spreadsheetId,
+        string $range,
+        array $values,
+    ): array {
+        $values = $this->normalizeRows($values);
+        if ($values === []) {
+            return [
+                'row' => 0,
+                'range' => '',
+                'values' => [],
+            ];
+        }
+
+        return $this->insertAfterHeaderRows($accessToken, $openId, $spreadsheetId, $range, $values);
+    }
+
+    /**
+     * 按列条件批量 upsert：存在则更新，不存在则插在表头下方.
+     *
+     * $column 支持单列 'F'，或多列 ['E', 'F']（AND）.
+     *
+     * @param list<mixed>|list<list<mixed>> $values
+     * @param string|int|list<string|int> $column
+     * @return array{
+     *     updated: list<array{row: int, range: string, values: list<mixed>}>,
+     *     inserted: null|array{row: int, range: string, values: list<mixed>|list<list<mixed>>}
+     * }
+     * @throws TencentApiException
+     */
+    public function upsertRows(
+        string $accessToken,
+        string $openId,
+        string $spreadsheetId,
+        string $range,
+        array $values,
+        string|int|array $column,
+    ): array {
+        $values = $this->normalizeRows($values);
+        if ($values === []) {
+            return [
+                'updated' => [],
+                'inserted' => null,
+            ];
+        }
+
+        [$sheetRef] = $this->parseRange($range);
+        $sheetPrefix = ($sheetRef !== null && $sheetRef !== '') ? $sheetRef . '!' : '';
+        $probe = $sheetPrefix . 'A1:Z10000';
+        $existingRows = $this->readCells($accessToken, $openId, $spreadsheetId, $probe, 1);
+        $colIndexes = $this->normalizeMatchColumns($column);
+
+        /** @var array<string, int> $index */
+        $index = [];
+        foreach ($existingRows as $offset => $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+            $rowNumber = (int) $offset + 1;
+            if ($rowNumber <= 1) {
+                continue;
+            }
+            $key = $this->rowMatchKey($row, $colIndexes);
+            if ($key === null || isset($index[$key])) {
+                continue;
+            }
+            $index[$key] = $rowNumber;
+        }
+
+        $toUpdate = [];
+        $toInsert = [];
+        foreach ($values as $row) {
+            $key = $this->rowMatchKey($row, $colIndexes);
+            if ($key === null) {
+                throw new \InvalidArgumentException(
+                    'upsertRows requires non-empty match values in columns: '
+                    . $this->formatMatchColumns($column)
+                );
+            }
+            if (isset($index[$key]) && $index[$key] > 0) {
+                $toUpdate[] = [
+                    'row' => $index[$key],
+                    'values' => $row,
+                ];
+            } else {
+                $toInsert[] = $row;
+                $index[$key] = -1;
+            }
+        }
+
+        $updated = [];
+        foreach ($toUpdate as $item) {
+            $result = $this->updateRow(
+                $accessToken,
+                $openId,
+                $spreadsheetId,
+                $range,
+                $item['values'],
+                row: $item['row'],
+            );
+            if ($result !== null) {
+                $updated[] = [
+                    'row' => $result['row'],
+                    'range' => $result['range'],
+                    'values' => is_array($result['values']) ? array_values($result['values']) : [],
+                ];
+            }
+        }
+
+        $inserted = null;
+        if ($toInsert !== []) {
+            $inserted = $this->insertAfterHeaderRows(
+                $accessToken,
+                $openId,
+                $spreadsheetId,
+                $range,
+                $toInsert,
+            );
+            $shift = count($toInsert);
+            foreach ($updated as $i => $item) {
+                if ($item['row'] < 2) {
+                    continue;
+                }
+                $newRow = $item['row'] + $shift;
+                $updated[$i]['row'] = $newRow;
+                $updated[$i]['range'] = $sheetPrefix . 'A' . $newRow . ':Z' . $newRow;
+            }
+        }
+
+        return [
+            'updated' => $updated,
+            'inserted' => $inserted,
+        ];
+    }
+
+    /**
+     * 在列区块内插入行（只移动该列范围，不影响左右其它块）.
+     *
+     * 默认插在第 1 行表头下方（dataStartRow=2, position=prepend），可批量.
+     *
+     * @param list<mixed>|list<list<mixed>> $values
+     * @return array{row: int, range: string, values: list<mixed>|list<list<mixed>>}
+     * @throws TencentApiException
+     */
+    public function insertBlock(
+        string $accessToken,
+        string $openId,
+        string $spreadsheetId,
+        string $range,
+        array $values,
+        int $dataStartRow = 2,
+        string $position = 'prepend',
+    ): array {
+        return $this->insertBlockRows(
+            $accessToken,
+            $openId,
+            $spreadsheetId,
+            $range,
+            $this->normalizeRows($values),
+            $dataStartRow,
+            $position,
+        );
+    }
+
+    /**
+     * 列区块内 upsert：有则改，无则默认插在表头下方.
+     *
+     * @param list<mixed>|list<list<mixed>> $values
+     * @param string|int|list<string|int> $column
+     * @return array{
+     *     updated: list<array{row: int, range: string, values: list<mixed>}>,
+     *     inserted: null|array{row: int, range: string, values: list<mixed>|list<list<mixed>>}
+     * }
+     * @throws TencentApiException
+     */
+    public function upsertBlock(
+        string $accessToken,
+        string $openId,
+        string $spreadsheetId,
+        string $range,
+        array $values,
+        string|int|array $column,
+        int $dataStartRow = 2,
+        string $position = 'prepend',
+    ): array {
+        $values = $this->normalizeRows($values);
+        if ($values === []) {
+            return [
+                'updated' => [],
+                'inserted' => null,
+            ];
+        }
+
+        $block = $this->resolveBlockMeta($range, $dataStartRow);
+        $relIndexes = $this->normalizeBlockMatchColumns($column, $block['startCol']);
+        $existing = $this->readCells(
+            $accessToken,
+            $openId,
+            $spreadsheetId,
+            $block['readRange'],
+            1,
+        );
+
+        /** @var array<string, int> $index */
+        $index = [];
+        foreach ($existing as $offset => $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+            $rowNumber = $block['dataStartRow'] + (int) $offset;
+            $key = $this->rowMatchKey($row, $relIndexes);
+            if ($key === null || isset($index[$key])) {
+                continue;
+            }
+            $index[$key] = $rowNumber;
+        }
+
+        $toUpdate = [];
+        $toInsert = [];
+        foreach ($values as $row) {
+            $key = $this->rowMatchKey($row, $relIndexes);
+            if ($key === null) {
+                throw new \InvalidArgumentException(
+                    'upsertBlock requires non-empty match values in columns: '
+                    . $this->formatMatchColumns($column)
+                );
+            }
+            if (isset($index[$key]) && $index[$key] > 0) {
+                $toUpdate[] = [
+                    'row' => $index[$key],
+                    'values' => $row,
+                ];
+            } else {
+                $toInsert[] = $row;
+                $index[$key] = -1;
+            }
+        }
+
+        $updated = [];
+        foreach ($toUpdate as $item) {
+            $writeRange = $block['sheetPrefix'] . $block['startColName'] . $item['row'];
+            $this->writeCells($accessToken, $openId, $spreadsheetId, $writeRange, [$item['values']]);
+            $readRange = $block['sheetPrefix']
+                . $block['startColName'] . $item['row']
+                . ':' . $block['endColName'] . $item['row'];
+            $readValues = $this->readCells($accessToken, $openId, $spreadsheetId, $readRange, 1);
+            $raw = $readValues[0] ?? [];
+            $updated[] = [
+                'row' => $item['row'],
+                'range' => $readRange,
+                'values' => is_array($raw) ? array_values($raw) : [],
+            ];
+        }
+
+        $inserted = null;
+        if ($toInsert !== []) {
+            $inserted = $this->insertBlockRows(
+                $accessToken,
+                $openId,
+                $spreadsheetId,
+                $range,
+                $toInsert,
+                $dataStartRow,
+                $position,
+            );
+            if ($position === 'prepend') {
+                $shift = count($toInsert);
+                foreach ($updated as $i => $item) {
+                    if ($item['row'] < $block['dataStartRow']) {
+                        continue;
+                    }
+                    $newRow = $item['row'] + $shift;
+                    $updated[$i]['row'] = $newRow;
+                    $updated[$i]['range'] = $block['sheetPrefix']
+                        . $block['startColName'] . $newRow
+                        . ':' . $block['endColName'] . $newRow;
+                }
+            }
+        }
+
+        return [
+            'updated' => $updated,
+            'inserted' => $inserted,
+        ];
+    }
+
+    /**
+     * @param list<list<mixed>> $values
+     * @return array{row: int, range: string, values: list<mixed>|list<list<mixed>>}
+     * @throws TencentApiException
+     */
+    private function insertBlockRows(
+        string $accessToken,
+        string $openId,
+        string $spreadsheetId,
+        string $range,
+        array $values,
+        int $dataStartRow,
+        string $position,
+    ): array {
+        $values = $this->normalizeRows($values);
+        if ($values === []) {
+            return [
+                'row' => 0,
+                'range' => '',
+                'values' => [],
+            ];
+        }
+
+        $position = strtolower(trim($position));
+        if (! in_array($position, ['prepend', 'append'], true)) {
+            throw new \InvalidArgumentException("insertBlock \$position must be 'prepend' or 'append'");
+        }
+        if ($dataStartRow < 1) {
+            throw new \InvalidArgumentException('insertBlock $dataStartRow must be >= 1');
+        }
+
+        $block = $this->resolveBlockMeta($range, $dataStartRow);
+        $existing = $this->readCells(
+            $accessToken,
+            $openId,
+            $spreadsheetId,
+            $block['readRange'],
+            1,
+        );
+        $rowCount = count($values);
+
+        if ($position === 'prepend') {
+            $startRow = $block['dataStartRow'];
+            $combined = $this->padBlockRows(
+                array_merge($values, $existing),
+                $block['endCol'] - $block['startCol'] + 1,
+            );
+            $this->writeCells(
+                $accessToken,
+                $openId,
+                $spreadsheetId,
+                $block['sheetPrefix'] . $block['startColName'] . $startRow,
+                $combined,
+            );
+        } else {
+            $startRow = $block['dataStartRow'] + count($existing);
+            $this->writeCells(
+                $accessToken,
+                $openId,
+                $spreadsheetId,
+                $block['sheetPrefix'] . $block['startColName'] . $startRow,
+                $values,
+            );
+        }
+
+        $endRow = $startRow + $rowCount - 1;
+        $readRange = $block['sheetPrefix']
+            . $block['startColName'] . $startRow
+            . ':' . $block['endColName'] . $endRow;
+        $readValues = $this->readCells($accessToken, $openId, $spreadsheetId, $readRange, 1);
+
+        return [
+            'row' => $startRow,
+            'range' => $readRange,
+            'values' => $this->unwrapSingleRowValues($readValues, $rowCount),
+        ];
+    }
+
+    /**
+     * @return array{
+     *     sheetPrefix: string,
+     *     startCol: int,
+     *     endCol: int,
+     *     startColName: string,
+     *     endColName: string,
+     *     dataStartRow: int,
+     *     readRange: string
+     * }
+     */
+    private function resolveBlockMeta(string $range, int $dataStartRow): array
+    {
+        [$sheetRef, $a1] = $this->parseRange($range);
+        $sheetPrefix = ($sheetRef !== null && $sheetRef !== '') ? $sheetRef . '!' : '';
+        $parsed = $this->parseBlockA1($a1);
+        $startCol = $parsed['startCol'];
+        $endCol = $parsed['endCol'];
+        if ($endCol < $startCol) {
+            [$startCol, $endCol] = [$endCol, $startCol];
+        }
+
+        $startRow = $dataStartRow;
+        if ($parsed['startRow'] !== null && $parsed['startRow'] > 0) {
+            $startRow = max($dataStartRow, $parsed['startRow']);
+        }
+
+        $startColName = $this->columnName($startCol);
+        $endColName = $this->columnName($endCol);
+        $endRow = $parsed['endRow'] ?? 10000;
+        if ($endRow < $startRow) {
+            $endRow = 10000;
+        }
+
+        return [
+            'sheetPrefix' => $sheetPrefix,
+            'startCol' => $startCol,
+            'endCol' => $endCol,
+            'startColName' => $startColName,
+            'endColName' => $endColName,
+            'dataStartRow' => $startRow,
+            'readRange' => $sheetPrefix . $startColName . $startRow . ':' . $endColName . $endRow,
+        ];
+    }
+
+    /**
+     * @return array{startCol: int, endCol: int, startRow: null|int, endRow: null|int}
+     */
+    private function parseBlockA1(string $a1): array
+    {
+        $a1 = trim($a1);
+        if (preg_match('/^([A-Za-z]+)(\d*):([A-Za-z]+)(\d*)$/', $a1, $m) === 1) {
+            return [
+                'startCol' => $this->columnIndex($m[1]),
+                'endCol' => $this->columnIndex($m[3]),
+                'startRow' => $m[2] !== '' ? (int) $m[2] : null,
+                'endRow' => $m[4] !== '' ? (int) $m[4] : null,
+            ];
+        }
+        if (preg_match('/^([A-Za-z]+)(\d*)$/', $a1, $m) === 1) {
+            $col = $this->columnIndex($m[1]);
+
+            return [
+                'startCol' => $col,
+                'endCol' => $col,
+                'startRow' => $m[2] !== '' ? (int) $m[2] : null,
+                'endRow' => null,
+            ];
+        }
+
+        return [
+            'startCol' => 1,
+            'endCol' => 26,
+            'startRow' => null,
+            'endRow' => null,
+        ];
+    }
+
+    private function columnIndex(string $column): int
+    {
+        $column = strtoupper($column);
+        $index = 0;
+        $length = strlen($column);
+        for ($i = 0; $i < $length; ++$i) {
+            $index = $index * 26 + (ord($column[$i]) - 64);
+        }
+
+        return $index;
+    }
+
+    private function columnName(int $columnNumber): string
+    {
+        $columnName = '';
+        while ($columnNumber > 0) {
+            $remainder = ($columnNumber - 1) % 26;
+            $columnName = chr(65 + $remainder) . $columnName;
+            $columnNumber = intdiv($columnNumber - 1, 26);
+        }
+
+        return $columnName;
+    }
+
+    /**
+     * @param string|int|list<string|int> $column
+     * @return list<int>
+     */
+    private function normalizeBlockMatchColumns(string|int|array $column, int $blockStartCol1Based): array
+    {
+        $columns = is_array($column) ? array_values($column) : [$column];
+        if ($columns === []) {
+            throw new \InvalidArgumentException('upsertBlock requires at least one match column');
+        }
+
+        $blockStart0 = $blockStartCol1Based - 1;
+        $indexes = [];
+        foreach ($columns as $col) {
+            if (is_int($col) || (is_string($col) && $col !== '' && ctype_digit($col))) {
+                $indexes[] = max(0, (int) $col);
+                continue;
+            }
+            if (! is_string($col)) {
+                throw new \InvalidArgumentException('upsertBlock match column must be string|int');
+            }
+            $abs0 = $this->toZeroBasedColumn($col);
+            $rel = $abs0 - $blockStart0;
+            if ($rel < 0) {
+                throw new \InvalidArgumentException(
+                    "upsertBlock match column {$col} is left of the block start"
+                );
+            }
+            $indexes[] = $rel;
+        }
+
+        return $indexes;
+    }
+
+    /**
+     * @param list<list<mixed>> $rows
+     * @return list<list<mixed>>
+     */
+    private function padBlockRows(array $rows, int $width): array
+    {
+        $width = max(1, $width);
+        $out = [];
+        foreach ($rows as $row) {
+            $cells = array_values(is_array($row) ? $row : [$row]);
+            while (count($cells) < $width) {
+                $cells[] = '';
+            }
+            $cells = array_slice($cells, 0, $width);
+            foreach ($cells as $i => $cell) {
+                if ($cell === null) {
+                    $cells[$i] = '';
+                }
+            }
+            $out[] = $cells;
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param list<list<mixed>> $values
+     * @return array{row: int, range: string, values: list<mixed>|list<list<mixed>>}
+     * @throws TencentApiException
+     */
+    private function insertAfterHeaderRows(
+        string $accessToken,
+        string $openId,
+        string $spreadsheetId,
+        string $range,
+        array $values,
+    ): array {
+        if ($values === []) {
+            return [
+                'row' => 0,
+                'range' => '',
+                'values' => [],
+            ];
+        }
+
+        [$sheetRef] = $this->parseRange($range);
+        $sheetPrefix = ($sheetRef !== null && $sheetRef !== '') ? $sheetRef . '!' : '';
+        $startRow = 2;
+        $rowCount = count($values);
+
+        // 读出原有数据行（跳过表头），再与新行合并写回 A2，实现下推
+        $existingData = $this->readCells(
+            $accessToken,
+            $openId,
+            $spreadsheetId,
+            $sheetPrefix . 'A2:Z10000',
+            1,
+        );
+        $combined = array_merge($values, $existingData);
+        $this->writeCells(
+            $accessToken,
+            $openId,
+            $spreadsheetId,
+            $sheetPrefix . 'A' . $startRow,
+            $combined,
+        );
+
+        $endRow = $startRow + $rowCount - 1;
+        $readRange = $sheetPrefix . 'A' . $startRow . ':Z' . $endRow;
+        $readValues = $this->readCells($accessToken, $openId, $spreadsheetId, $readRange, 1);
+
+        return [
+            'row' => $startRow,
+            'range' => $readRange,
+            'values' => $this->unwrapSingleRowValues($readValues, $rowCount),
+        ];
+    }
+
+    private function matchKey(mixed $cell): ?string
+    {
+        if ($cell === null) {
+            return null;
+        }
+        if (is_bool($cell)) {
+            return $cell ? '__bool:1' : '__bool:0';
+        }
+        $text = trim((string) $cell);
+        if ($text === '') {
+            return null;
+        }
+
+        return $text;
+    }
+
+    /**
+     * @param string|int|list<string|int> $column
+     * @return list<int>
+     */
+    private function normalizeMatchColumns(string|int|array $column): array
+    {
+        $columns = is_array($column) ? array_values($column) : [$column];
+        if ($columns === []) {
+            throw new \InvalidArgumentException('upsertRows requires at least one match column');
+        }
+
+        $indexes = [];
+        foreach ($columns as $col) {
+            if (! is_string($col) && ! is_int($col)) {
+                throw new \InvalidArgumentException('upsertRows match column must be string|int');
+            }
+            $indexes[] = $this->toZeroBasedColumn($col);
+        }
+
+        return $indexes;
+    }
+
+    /**
+     * @param list<mixed> $row
+     * @param list<int> $colIndexes
+     */
+    private function rowMatchKey(array $row, array $colIndexes): ?string
+    {
+        $parts = [];
+        foreach ($colIndexes as $idx) {
+            $part = $this->matchKey($row[$idx] ?? null);
+            if ($part === null) {
+                return null;
+            }
+            $parts[] = $part;
+        }
+
+        return implode("\0", $parts);
+    }
+
+    /**
+     * @param string|int|list<string|int> $column
+     */
+    private function formatMatchColumns(string|int|array $column): string
+    {
+        $columns = is_array($column) ? $column : [$column];
+
+        return implode(', ', array_map(
+            static fn ($col) => is_string($col) || is_int($col) ? (string) $col : '?',
+            $columns
+        ));
+    }
+
+    /**
      * 单行 [a, b] 或多行 [[a], [b]] 统一成二维行矩阵.
      *
      * @param list<mixed>|list<list<mixed>> $values

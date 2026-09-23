@@ -164,6 +164,74 @@ class TencentPlatform implements PlatformInterface, AuthInterface, SheetsInterfa
         );
     }
 
+    public function insertAfterHeader(array $token, string $spreadsheetId, string $range, array $values): array
+    {
+        return $this->tencentSheets->insertAfterHeader(
+            $this->accessToken($token),
+            $this->openId($token),
+            $spreadsheetId,
+            $range,
+            $values,
+        );
+    }
+
+    public function upsertRows(
+        array $token,
+        string $spreadsheetId,
+        string $range,
+        array $values,
+        string|int|array $column,
+    ): array {
+        return $this->tencentSheets->upsertRows(
+            $this->accessToken($token),
+            $this->openId($token),
+            $spreadsheetId,
+            $range,
+            $values,
+            $column,
+        );
+    }
+
+    public function insertBlock(
+        array $token,
+        string $spreadsheetId,
+        string $range,
+        array $values,
+        int $dataStartRow = 2,
+        string $position = 'prepend',
+    ): array {
+        return $this->tencentSheets->insertBlock(
+            $this->accessToken($token),
+            $this->openId($token),
+            $spreadsheetId,
+            $range,
+            $values,
+            $dataStartRow,
+            $position,
+        );
+    }
+
+    public function upsertBlock(
+        array $token,
+        string $spreadsheetId,
+        string $range,
+        array $values,
+        string|int|array $column,
+        int $dataStartRow = 2,
+        string $position = 'prepend',
+    ): array {
+        return $this->tencentSheets->upsertBlock(
+            $this->accessToken($token),
+            $this->openId($token),
+            $spreadsheetId,
+            $range,
+            $values,
+            $column,
+            $dataStartRow,
+            $position,
+        );
+    }
+
     public function batchWrite(array $token, string $spreadsheetId, array $data): void
     {
         $this->tencentSheets->batchWrite(
