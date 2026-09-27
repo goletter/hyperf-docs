@@ -402,9 +402,10 @@ class GoogleSheets
     }
 
     /**
-     * 按列条件批量 upsert：存在则更新，不存在则插在表头下方.
+     * 按列条件批量 upsert：存在则更新，不存在则插在 $dataStartRow 行（旧数据下推）.
      *
      * $column 支持单列 'F'，或多列 ['E', 'F']（AND）.
+     * $dataStartRow 为数据首行（默认 2，即第 1 行是表头）；其上的行不参与匹配.
      *
      * @param list<null|bool|scalar>|list<list<null|bool|scalar>> $values
      * @param string|int|list<string|int> $column
@@ -419,8 +420,13 @@ class GoogleSheets
         string $range,
         array $values,
         string|int|array $column,
+        int $dataStartRow = 2,
     ): array {
-        return $this->googleClient->request(function () use ($accessToken, $spreadsheetId, $range, $values, $column) {
+        if ($dataStartRow < 1) {
+            throw new \InvalidArgumentException('upsertRows $dataStartRow must be >= 1');
+        }
+
+        return $this->googleClient->request(function () use ($accessToken, $spreadsheetId, $range, $values, $column, $dataStartRow) {
             $values = $this->normalizeRows($values);
             if ($values === []) {
                 return [
@@ -446,7 +452,7 @@ class GoogleSheets
                     continue;
                 }
                 $rowNumber = $startRow + (int) $offset;
-                if ($rowNumber <= 1) {
+                if ($rowNumber < $dataStartRow) {
                     continue; // 跳过表头
                 }
                 $key = $this->rowMatchKey($row, $colIndexes);
@@ -514,11 +520,12 @@ class GoogleSheets
                     $spreadsheetId,
                     $range,
                     $toInsert,
+                    $dataStartRow,
                 );
                 // 表头下插入会把原数据下推，更新结果的行号需同步偏移
                 $shift = count($toInsert);
                 foreach ($updated as $i => $item) {
-                    if ($item['row'] < 2) {
+                    if ($item['row'] < $dataStartRow) {
                         continue;
                     }
                     $newRow = $item['row'] + $shift;
@@ -980,6 +987,7 @@ class GoogleSheets
         string $spreadsheetId,
         string $range,
         array $values,
+        int $startRow = 2,
     ): array {
         if ($values === []) {
             return [
@@ -993,7 +1001,6 @@ class GoogleSheets
         $sheetId = $this->resolveNumericSheetId($accessToken, $spreadsheetId, $range);
         $resolved = $this->resolveRange($accessToken, $spreadsheetId, $range, true);
         $sheetPrefix = $this->sheetPrefixFromRange($resolved);
-        $startRow = 2;
 
         $body = new BatchUpdateSpreadsheetRequest([
             'requests' => [
@@ -1002,10 +1009,11 @@ class GoogleSheets
                         'range' => new DimensionRange([
                             'sheetId' => $sheetId,
                             'dimension' => 'ROWS',
-                            'startIndex' => 1,
-                            'endIndex' => 1 + $rowCount,
+                            'startIndex' => $startRow - 1,
+                            'endIndex' => $startRow - 1 + $rowCount,
                         ]),
-                        'inheritFromBefore' => true,
+                        // 上一行是表头，新行格式跟随下方的数据行
+                        'inheritFromBefore' => false,
                     ]),
                 ]),
             ],

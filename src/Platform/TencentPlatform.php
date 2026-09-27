@@ -181,6 +181,7 @@ class TencentPlatform implements PlatformInterface, AuthInterface, SheetsInterfa
         string $range,
         array $values,
         string|int|array $column,
+        int $dataStartRow = 2,
     ): array {
         return $this->tencentSheets->upsertRows(
             $this->accessToken($token),
@@ -189,6 +190,7 @@ class TencentPlatform implements PlatformInterface, AuthInterface, SheetsInterfa
             $range,
             $values,
             $column,
+            $dataStartRow,
         );
     }
 

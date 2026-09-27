@@ -366,6 +366,18 @@ $result = $sheets->upsertRows(
     ],
     column: ['E', 'F'],
 );
+
+// 表头占两行（第 1、2 行）：数据从第 3 行起，新行插到第 3 行，第 1~2 行不参与匹配
+$result = $sheets->upsertRows(
+    $token,
+    $spreadsheetId,
+    "gid:{$gid}",
+    [
+        [null, null, null, null, '名称1', '111', null, true],
+    ],
+    column: 'F',
+    dataStartRow: 3,
+);
 /*
 [
   'updated' => [

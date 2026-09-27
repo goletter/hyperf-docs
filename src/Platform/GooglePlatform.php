@@ -158,6 +158,7 @@ class GooglePlatform implements PlatformInterface, AuthInterface, SheetsInterfac
         string $range,
         array $values,
         string|int|array $column,
+        int $dataStartRow = 2,
     ): array {
         return $this->googleSheets->upsertRows(
             $this->accessToken($token),
@@ -165,6 +166,7 @@ class GooglePlatform implements PlatformInterface, AuthInterface, SheetsInterfac
             $range,
             $values,
             $column,
+            $dataStartRow,
         );
     }
 

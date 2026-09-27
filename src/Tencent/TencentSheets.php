@@ -480,9 +480,10 @@ class TencentSheets
     }
 
     /**
-     * 按列条件批量 upsert：存在则更新，不存在则插在表头下方.
+     * 按列条件批量 upsert：存在则更新，不存在则插在 $dataStartRow 行（旧数据下推）.
      *
      * $column 支持单列 'F'，或多列 ['E', 'F']（AND）.
+     * $dataStartRow 为数据首行（默认 2，即第 1 行是表头）；其上的行不参与匹配.
      *
      * @param list<mixed>|list<list<mixed>> $values
      * @param string|int|list<string|int> $column
@@ -499,7 +500,11 @@ class TencentSheets
         string $range,
         array $values,
         string|int|array $column,
+        int $dataStartRow = 2,
     ): array {
+        if ($dataStartRow < 1) {
+            throw new \InvalidArgumentException('upsertRows $dataStartRow must be >= 1');
+        }
         $values = $this->normalizeRows($values);
         if ($values === []) {
             return [
@@ -521,7 +526,7 @@ class TencentSheets
                 continue;
             }
             $rowNumber = (int) $offset + 1;
-            if ($rowNumber <= 1) {
+            if ($rowNumber < $dataStartRow) {
                 continue;
             }
             $key = $this->rowMatchKey($row, $colIndexes);
@@ -579,10 +584,11 @@ class TencentSheets
                 $spreadsheetId,
                 $range,
                 $toInsert,
+                $dataStartRow,
             );
             $shift = count($toInsert);
             foreach ($updated as $i => $item) {
-                if ($item['row'] < 2) {
+                if ($item['row'] < $dataStartRow) {
                     continue;
                 }
                 $newRow = $item['row'] + $shift;
@@ -998,6 +1004,7 @@ class TencentSheets
         string $spreadsheetId,
         string $range,
         array $values,
+        int $startRow = 2,
     ): array {
         if ($values === []) {
             return [
@@ -1009,15 +1016,14 @@ class TencentSheets
 
         [$sheetRef] = $this->parseRange($range);
         $sheetPrefix = ($sheetRef !== null && $sheetRef !== '') ? $sheetRef . '!' : '';
-        $startRow = 2;
         $rowCount = count($values);
 
-        // 读出原有数据行（跳过表头），再与新行合并写回 A2，实现下推
+        // 读出 $startRow 起的原有数据行，再与新行合并写回 $startRow，实现下推
         $existingData = $this->readCells(
             $accessToken,
             $openId,
             $spreadsheetId,
-            $sheetPrefix . 'A2:Z10000',
+            $sheetPrefix . 'A' . $startRow . ':Z10000',
             1,
         );
         $combined = array_merge($values, $existingData);
