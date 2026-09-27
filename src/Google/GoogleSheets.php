@@ -12,9 +12,12 @@ use Google\Service\Sheets;
 use Google\Service\Sheets\AddSheetRequest;
 use Google\Service\Sheets\BatchUpdateSpreadsheetRequest;
 use Google\Service\Sheets\BatchUpdateValuesRequest;
+use Google\Service\Sheets\CopyPasteRequest;
 use Google\Service\Sheets\DeleteDimensionRequest;
 use Google\Service\Sheets\DimensionRange;
+use Google\Service\Sheets\GridRange;
 use Google\Service\Sheets\InsertDimensionRequest;
+use Google\Service\Sheets\InsertRangeRequest;
 use Google\Service\Sheets\Request;
 use Google\Service\Sheets\Spreadsheet;
 use Google\Service\Sheets\ValueRange;
@@ -724,24 +727,18 @@ class GoogleSheets
         }
 
         $block = $this->resolveBlockMeta($accessToken, $spreadsheetId, $range, $dataStartRow);
-        $existing = $this->readBlockRows($accessToken, $spreadsheetId, $block);
         $rowCount = count($values);
 
         if ($position === 'prepend') {
             $startRow = $block['dataStartRow'];
-            $combined = array_merge($values, $existing);
-            $dense = $this->padBlockRows($combined, $block['endCol'] - $block['startCol'] + 1);
+            $this->shiftBlockDown($accessToken, $spreadsheetId, $range, $block, $rowCount);
             $writeRange = $block['sheetPrefix'] . $block['startColName'] . $startRow;
-            $body = new ValueRange([
-                'values' => $this->encodeSheetValues($dense),
-            ]);
-            $this->getSheetsService($accessToken)->spreadsheets_values->update(
-                $spreadsheetId,
-                $writeRange,
-                $body,
-                ['valueInputOption' => self::VALUE_INPUT_OPTION]
-            );
+            $chunks = $this->expandSparseWrites($writeRange, $values);
+            if ($chunks !== []) {
+                $this->applyValueChunks($accessToken, $spreadsheetId, $chunks);
+            }
         } else {
+            $existing = $this->readBlockRows($accessToken, $spreadsheetId, $block);
             $startRow = $block['dataStartRow'] + count($existing);
             $writeRange = $block['sheetPrefix'] . $block['startColName'] . $startRow;
             $chunks = $this->expandSparseWrites($writeRange, $values);
@@ -763,6 +760,71 @@ class GoogleSheets
             'range' => $readRange,
             'values' => $this->unwrapSingleRowValues($read->getValues() ?? [], $rowCount),
         ];
+    }
+
+    /**
+     * 在区块列范围内「插入单元格并下移」，格式随数据一起下移；新空行沿用原首行数据的格式.
+     *
+     * @param array{
+     *     sheetPrefix: string,
+     *     startCol: int,
+     *     endCol: int,
+     *     startColName: string,
+     *     endColName: string,
+     *     dataStartRow: int,
+     *     readRange: string
+     * } $block
+     */
+    private function shiftBlockDown(
+        string $accessToken,
+        string $spreadsheetId,
+        string $range,
+        array $block,
+        int $rowCount,
+    ): void {
+        $sheetId = $this->resolveNumericSheetId($accessToken, $spreadsheetId, $range);
+        $startIndex = $block['dataStartRow'] - 1;
+        $startCol = $block['startCol'] - 1;
+        $endCol = $block['endCol'];
+
+        $body = new BatchUpdateSpreadsheetRequest([
+            'requests' => [
+                new Request([
+                    'insertRange' => new InsertRangeRequest([
+                        'range' => new GridRange([
+                            'sheetId' => $sheetId,
+                            'startRowIndex' => $startIndex,
+                            'endRowIndex' => $startIndex + $rowCount,
+                            'startColumnIndex' => $startCol,
+                            'endColumnIndex' => $endCol,
+                        ]),
+                        'shiftDimension' => 'ROWS',
+                    ]),
+                ]),
+                new Request([
+                    'copyPaste' => new CopyPasteRequest([
+                        'source' => new GridRange([
+                            'sheetId' => $sheetId,
+                            'startRowIndex' => $startIndex + $rowCount,
+                            'endRowIndex' => $startIndex + $rowCount + 1,
+                            'startColumnIndex' => $startCol,
+                            'endColumnIndex' => $endCol,
+                        ]),
+                        'destination' => new GridRange([
+                            'sheetId' => $sheetId,
+                            'startRowIndex' => $startIndex,
+                            'endRowIndex' => $startIndex + $rowCount,
+                            'startColumnIndex' => $startCol,
+                            'endColumnIndex' => $endCol,
+                        ]),
+                        'pasteType' => 'PASTE_FORMAT',
+                        'pasteOrientation' => 'NORMAL',
+                    ]),
+                ]),
+            ],
+        ]);
+
+        $this->getSheetsService($accessToken)->spreadsheets->batchUpdate($spreadsheetId, $body);
     }
 
     /**
@@ -907,33 +969,6 @@ class GoogleSheets
         }
 
         return $indexes;
-    }
-
-    /**
-     * 区块写回时把 null 收成 ''，并补齐列宽，避免稀疏写留下错位旧值.
-     *
-     * @param list<list<mixed>> $rows
-     * @return list<list<mixed>>
-     */
-    private function padBlockRows(array $rows, int $width): array
-    {
-        $width = max(1, $width);
-        $out = [];
-        foreach ($rows as $row) {
-            $cells = array_values(is_array($row) ? $row : [$row]);
-            while (count($cells) < $width) {
-                $cells[] = '';
-            }
-            $cells = array_slice($cells, 0, $width);
-            foreach ($cells as $i => $cell) {
-                if ($cell === null) {
-                    $cells[$i] = '';
-                }
-            }
-            $out[] = $cells;
-        }
-
-        return $out;
     }
 
     /**
