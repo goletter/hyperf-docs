@@ -342,6 +342,8 @@ $result = $sheets->insertAfterHeader($token, $spreadsheetId, "gid:{$gid}", [
 
 #### 按条件 upsert（有则改，无则插到表头下）
 
+命中已有行时，**只有数据有变化才会写入**；内容完全一致则跳过，不进入 `updated`。`null` 单元格表示跳过该格（不参与比较、也不覆盖）。
+
 ```php
 // 单列：按 F 列匹配
 $result = $sheets->upsertRows(
