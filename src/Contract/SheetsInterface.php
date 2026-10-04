@@ -108,10 +108,11 @@ interface SheetsInterface
     public function insertAfterHeader(array $token, string $spreadsheetId, string $range, array $values): array;
 
     /**
-     * 按列条件批量 upsert：存在则更新，不存在则插在 $dataStartRow 行（旧数据下推）.
+     * 按列条件批量 upsert：存在且数据有变化则更新，不存在则插在 $dataStartRow 行（旧数据下推）.
      *
      * 匹配值取自每行 $values 对应列；$dataStartRow 之上的表头行不参与匹配.
      * $column 支持单列 'F'，或多列 ['E', 'F']（AND，全部相等才算命中）.
+     * 匹配到已有行时，仅当非 null 单元格与现有值不同才会写入（null 表示跳过该格）.
      *
      * @param array{access_token: string, open_id?: string, user_id?: string} $token
      * @param list<null|bool|scalar>|list<list<null|bool|scalar>> $values

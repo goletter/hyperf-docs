@@ -402,10 +402,11 @@ class GoogleSheets
     }
 
     /**
-     * 按列条件批量 upsert：存在则更新，不存在则插在 $dataStartRow 行（旧数据下推）.
+     * 按列条件批量 upsert：存在且数据有变化则更新，不存在则插在 $dataStartRow 行（旧数据下推）.
      *
      * $column 支持单列 'F'，或多列 ['E', 'F']（AND）.
      * $dataStartRow 为数据首行（默认 2，即第 1 行是表头）；其上的行不参与匹配.
+     * 匹配到已有行时，仅当非 null 单元格与现有值不同才会写入（null 表示跳过该格）.
      *
      * @param list<null|bool|scalar>|list<list<null|bool|scalar>> $values
      * @param string|int|list<string|int> $column
@@ -445,7 +446,7 @@ class GoogleSheets
                 ->get($spreadsheetId, $resolved);
             $existingRows = $response->getValues() ?? [];
 
-            /** @var array<string, int> $index */
+            /** @var array<string, array{row: int, values: list<mixed>}|int> $index */
             $index = [];
             foreach ($existingRows as $offset => $row) {
                 if (! is_array($row)) {
@@ -459,7 +460,10 @@ class GoogleSheets
                 if ($key === null || isset($index[$key])) {
                     continue;
                 }
-                $index[$key] = $rowNumber;
+                $index[$key] = [
+                    'row' => $rowNumber,
+                    'values' => array_values($row),
+                ];
             }
 
             $toUpdate = [];
@@ -472,12 +476,15 @@ class GoogleSheets
                         . $this->formatMatchColumns($column)
                     );
                 }
-                if (isset($index[$key]) && $index[$key] > 0) {
-                    $toUpdate[] = [
-                        'row' => $index[$key],
-                        'values' => $row,
-                    ];
-                } else {
+                $hit = $index[$key] ?? null;
+                if (is_array($hit)) {
+                    if ($this->rowNeedsUpdate($row, $hit['values'])) {
+                        $toUpdate[] = [
+                            'row' => $hit['row'],
+                            'values' => $row,
+                        ];
+                    }
+                } elseif ($hit !== -1) {
                     $toInsert[] = $row;
                     // 同批相同 key 只插一次
                     $index[$key] = -1;
@@ -1590,6 +1597,26 @@ class GoogleSheets
         }
 
         return (string) $cell === (string) $expected;
+    }
+
+    /**
+     * 新行相对已有行是否需要写入：null 表示跳过该格；其余格与现有值不同才算有变化.
+     *
+     * @param list<mixed> $newRow
+     * @param list<mixed> $existingRow
+     */
+    private function rowNeedsUpdate(array $newRow, array $existingRow): bool
+    {
+        foreach ($newRow as $i => $cell) {
+            if ($cell === null) {
+                continue;
+            }
+            if (! $this->cellEquals($existingRow[$i] ?? null, $cell)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
