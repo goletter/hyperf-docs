@@ -275,13 +275,82 @@ class TencentSheets
             rawurlencode($range)
         );
 
-        return $this->client->request(
+        $response = $this->client->request(
             'PUT',
             $uri,
             $accessToken,
             $openId,
             json: ['values' => $values],
         );
+
+        $this->forceTextCells($accessToken, $openId, $spreadsheetId, $range, $values);
+
+        return $response;
+    }
+
+    /**
+     * v2 写入会把纯数字字符串识别为数字：超过 15 位丢精度并显示为科学计数法，前导 0 会被吃掉。
+     * 对这类单元格再用 v3 updateRangeRequest 以 cellValue.text 覆盖写一次.
+     *
+     * @param list<mixed>|list<list<mixed>> $values
+     * @throws TencentApiException
+     */
+    private function forceTextCells(
+        string $accessToken,
+        string $openId,
+        string $spreadsheetId,
+        string $range,
+        array $values,
+    ): void {
+        [$sheetRef, $a1Range] = $this->parseRange($range);
+        if (preg_match('/^([A-Za-z]+)(\d+)/', $a1Range, $m) !== 1) {
+            return;
+        }
+        $startRow = (int) $m[2] - 1;
+        $startColumn = $this->columnIndex($m[1]) - 1;
+
+        $requests = [];
+        foreach ($this->normalizeRows($values) as $r => $row) {
+            foreach ($row as $c => $cell) {
+                if (! is_string($cell) || preg_match('/^(?:\d{12,}|0\d+)$/', $cell) !== 1) {
+                    continue;
+                }
+                $requests[] = [
+                    'row' => $startRow + (int) $r,
+                    'column' => $startColumn + (int) $c,
+                    'text' => $cell,
+                ];
+            }
+        }
+        if ($requests === []) {
+            return;
+        }
+
+        $sheetId = $this->resolveSheetId($accessToken, $openId, $spreadsheetId, $sheetRef);
+        $uri = sprintf('/openapi/spreadsheet/v3/files/%s/batchUpdate', rawurlencode($spreadsheetId));
+
+        foreach (array_chunk($requests, 100) as $chunk) {
+            $this->client->request(
+                'POST',
+                $uri,
+                $accessToken,
+                $openId,
+                json: [
+                    'requests' => array_map(static fn (array $item) => [
+                        'updateRangeRequest' => [
+                            'sheetId' => $sheetId,
+                            'gridData' => [
+                                'startRow' => $item['row'],
+                                'startColumn' => $item['column'],
+                                'rows' => [
+                                    ['values' => [['cellValue' => ['text' => $item['text']]]]],
+                                ],
+                            ],
+                        ],
+                    ], $chunk),
+                ],
+            );
+        }
     }
 
     /**
@@ -1055,6 +1124,9 @@ class TencentSheets
             return $cell ? '__bool:1' : '__bool:0';
         }
         $text = trim((string) $cell);
+        if (str_starts_with($text, "'")) {
+            $text = substr($text, 1);
+        }
         if ($text === '') {
             return null;
         }

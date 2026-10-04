@@ -1048,6 +1048,9 @@ class GoogleSheets
             return $cell ? '__bool:1' : '__bool:0';
         }
         $text = trim((string) $cell);
+        if (str_starts_with($text, "'")) {
+            $text = substr($text, 1);
+        }
         if ($text === '') {
             return null;
         }
@@ -1357,18 +1360,35 @@ class GoogleSheets
         $encoded = [];
         foreach ($values as $row) {
             if (! is_array($row)) {
-                $encoded[] = $row === null ? GoogleModel::NULL_VALUE : $row;
+                $encoded[] = $this->encodeCell($row);
                 continue;
             }
 
             $line = [];
             foreach (array_values($row) as $cell) {
-                $line[] = $cell === null ? GoogleModel::NULL_VALUE : $cell;
+                $line[] = $this->encodeCell($cell);
             }
             $encoded[] = $line;
         }
 
         return $encoded;
+    }
+
+    /**
+     * USER_ENTERED 会把纯数字字符串解析成数字：超过 15 位丢精度并显示为科学计数法，前导 0 会被吃掉。
+     * 对这类字符串加 ' 前缀强制按文本保存（单元格值本身不含 '）。
+     */
+    private function encodeCell(mixed $cell): mixed
+    {
+        if ($cell === null) {
+            return GoogleModel::NULL_VALUE;
+        }
+
+        if (is_string($cell) && preg_match('/^(?:\d{12,}|0\d+)$/', $cell) === 1) {
+            return "'" . $cell;
+        }
+
+        return $cell;
     }
 
     /**
