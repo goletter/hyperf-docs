@@ -8,6 +8,7 @@ use Goletter\Docs\Contract\AuthInterface;
 use Goletter\Docs\Contract\PlatformInterface;
 use Goletter\Docs\Contract\SheetsInterface;
 use Goletter\Docs\Support\ResolvesAccessToken;
+use Goletter\Docs\Support\SheetUrl;
 use Goletter\Docs\Tencent\TencentAuth;
 use Goletter\Docs\Tencent\TencentSheets;
 
@@ -276,5 +277,13 @@ class TencentPlatform implements PlatformInterface, AuthInterface, SheetsInterfa
             $this->openId($token),
             $spreadsheetId,
         );
+    }
+
+    /**
+     * @return array{spreadsheet_id: string, sheet_id: string, pad: string, url: string}
+     */
+    public function parseSpreadsheetUrl(string $url): array
+    {
+        return SheetUrl::parseTencent($url);
     }
 }

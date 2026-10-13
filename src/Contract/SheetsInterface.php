@@ -204,4 +204,14 @@ interface SheetsInterface
      * @param array{access_token: string, open_id?: string, user_id?: string} $token
      */
     public function shareSpreadsheetForAnyoneReader(array $token, string $spreadsheetId): mixed;
+
+    /**
+     * 从分享链接解析 spreadsheetId / 子表标识.
+     *
+     * Google：spreadsheet_id + gid
+     * 腾讯：spreadsheet_id + sheet_id（URL ?tab=）
+     *
+     * @return array<string, string>
+     */
+    public function parseSpreadsheetUrl(string $url): array;
 }

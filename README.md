@@ -186,6 +186,15 @@ $token = ['access_token' => $accessToken];
 
 $spreadsheetId = '1f6KLBbJnsOMKMKUxkwH-Bfwm4YWkFA_RBibJbbLIq8M';
 $gid = 649506568; // URL 里 #gid=
+
+// 从分享链接解析 spreadsheetId / gid
+// https://docs.google.com/spreadsheets/d/{id}/edit#gid=649506568
+$parsed = $sheets->parseSpreadsheetUrl(
+    'https://docs.google.com/spreadsheets/d/1f6KLBbJnsOMKMKUxkwH-Bfwm4YWkFA_RBibJbbLIq8M/edit#gid=649506568'
+);
+// → spreadsheet_id / gid / url
+// 或：Goletter\Docs\Support\SheetUrl::parseGoogle($url)
+// 反解：SheetUrl::buildGoogle($spreadsheetId, $gid)
 ```
 
 #### Range / gid
@@ -474,6 +483,14 @@ $token = $this->auth->fetchToken($code);
 
 $file = $this->sheets->createSpreadsheet($accessToken, $openId, '报表');
 $spreadsheetId = $file['ID'] ?? $file['id'];
+
+// 从分享链接解析 spreadsheetId / sheetId（?tab=）
+// https://docs.qq.com/sheet/DSEhEVGJuQ1dFQXhM?tab=BB08J2
+// → spreadsheet_id=300000000$HHDTbnCWEAxL, sheet_id=BB08J2
+$parsed = $this->docs->sheets('tencent')->parseSpreadsheetUrl(
+    'https://docs.qq.com/sheet/DSEhEVGJuQ1dFQXhM?tab=BB08J2'
+);
+// 或：Goletter\Docs\Support\SheetUrl::parseTencent($url)
 
 // 读：spreadsheet v3（需 scope.sheet / scope.sheet.readonly）
 $values = $this->sheets->readCells($accessToken, $openId, $spreadsheetId, 'A1:Z1000');

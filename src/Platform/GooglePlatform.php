@@ -10,6 +10,7 @@ use Goletter\Docs\Contract\SheetsInterface;
 use Goletter\Docs\Google\GoogleAuth;
 use Goletter\Docs\Google\GoogleSheets;
 use Goletter\Docs\Support\ResolvesAccessToken;
+use Goletter\Docs\Support\SheetUrl;
 use Google\Service\Sheets\Spreadsheet;
 
 class GooglePlatform implements PlatformInterface, AuthInterface, SheetsInterface
@@ -258,6 +259,14 @@ class GooglePlatform implements PlatformInterface, AuthInterface, SheetsInterfac
             $this->accessToken($token),
             $spreadsheetId,
         );
+    }
+
+    /**
+     * @return array{spreadsheet_id: string, gid: string, url: string}
+     */
+    public function parseSpreadsheetUrl(string $url): array
+    {
+        return SheetUrl::parseGoogle($url);
     }
 
     /**

@@ -76,7 +76,7 @@ class TencentSheets
 
         $uri = sprintf(
             '/openapi/spreadsheet/v3/files/%s/%s/%s',
-            rawurlencode($spreadsheetId),
+            $this->encodeFileId($spreadsheetId),
             rawurlencode($sheetId),
             rawurlencode($a1Range)
         );
@@ -260,7 +260,7 @@ class TencentSheets
         string $spreadsheetId,
         bool $concise = true,
     ): array {
-        $uri = sprintf('/openapi/spreadsheet/v3/files/%s', rawurlencode($spreadsheetId));
+        $uri = sprintf('/openapi/spreadsheet/v3/files/%s', $this->encodeFileId($spreadsheetId));
         $response = $this->client->request(
             'GET',
             $uri,
@@ -269,11 +269,20 @@ class TencentSheets
             query: ['concise' => $concise ? 1 : 0],
         );
 
-        $properties = $response['data']['properties']
-            ?? $response['properties']
-            ?? [];
+        $sheets = $this->extractSheetProperties($response);
+        // Drive 刚创建的表格偶发 concise 下 properties 为空，再拉一次完整元数据
+        if ($sheets === [] && $concise) {
+            $response = $this->client->request(
+                'GET',
+                $uri,
+                $accessToken,
+                $openId,
+                query: ['concise' => 0],
+            );
+            $sheets = $this->extractSheetProperties($response);
+        }
 
-        return is_array($properties) ? array_values(array_filter($properties, 'is_array')) : [];
+        return $sheets;
     }
 
     /**
@@ -289,10 +298,18 @@ class TencentSheets
         string $range,
         array $values,
     ): array {
+        $values = $this->normalizeRows($values);
+        $values = $this->stringifyRows($values);
+        [$sheetRef, $a1Range] = $this->parseRange($range);
+        $sheetId = $this->resolveSheetId($accessToken, $openId, $spreadsheetId, $sheetRef);
+        // sheetbook v2 要求 range 形如 sheetId!A1:B1，且行列与 values 对齐
+        $writeA1 = $this->expandA1Range($a1Range, $values);
+        $writeRange = $sheetId . '!' . $writeA1;
+
         $uri = sprintf(
             '/openapi/sheetbook/v2/%s/values/%s',
-            rawurlencode($spreadsheetId),
-            rawurlencode($range)
+            $this->encodeFileId($spreadsheetId),
+            rawurlencode($writeRange)
         );
 
         $response = $this->client->request(
@@ -303,7 +320,7 @@ class TencentSheets
             json: ['values' => $values],
         );
 
-        $this->forceTextCells($accessToken, $openId, $spreadsheetId, $range, $values);
+        $this->forceTextCells($accessToken, $openId, $spreadsheetId, $writeRange, $values);
 
         return $response;
     }
@@ -347,7 +364,7 @@ class TencentSheets
         }
 
         $sheetId = $this->resolveSheetId($accessToken, $openId, $spreadsheetId, $sheetRef);
-        $uri = sprintf('/openapi/spreadsheet/v3/files/%s/batchUpdate', rawurlencode($spreadsheetId));
+        $uri = sprintf('/openapi/spreadsheet/v3/files/%s/batchUpdate', $this->encodeFileId($spreadsheetId));
 
         foreach (array_chunk($requests, 100) as $chunk) {
             $this->client->request(
@@ -461,7 +478,7 @@ class TencentSheets
 
         [$sheetRef] = $this->parseRange($range);
         $sheetId = $this->resolveSheetId($accessToken, $openId, $spreadsheetId, $sheetRef);
-        $uri = sprintf('/openapi/spreadsheet/v3/files/%s/batchUpdate', rawurlencode($spreadsheetId));
+        $uri = sprintf('/openapi/spreadsheet/v3/files/%s/batchUpdate', $this->encodeFileId($spreadsheetId));
 
         $this->client->request(
             'POST',
@@ -513,21 +530,24 @@ class TencentSheets
 
         [$sheetRef, $a1Range] = $this->parseRange($range);
         $sheetPrefix = ($sheetRef !== null && $sheetRef !== '') ? $sheetRef . '!' : '';
+        // 腾讯表格会校验 RangeSize，不能超过子表 rowTotal（常见 200），不能写死 A10000
+        $probeRows = $this->resolveSheetRowTotal($accessToken, $openId, $spreadsheetId, $sheetRef);
         $existing = $this->readCells(
             $accessToken,
             $openId,
             $spreadsheetId,
-            $sheetPrefix . 'A1:A10000',
+            $sheetPrefix . 'A1:A' . $probeRows,
         );
         $nextRow = count($existing) + 1;
         $rowCount = count($values);
         $endRow = $nextRow + $rowCount - 1;
 
-        $startA1 = 'A' . $nextRow;
+        $startCol = 'A';
         if (preg_match('/^([A-Za-z]+)(\d+)/', $a1Range, $m) === 1) {
-            $startA1 = $m[1] . $nextRow;
+            $startCol = $m[1];
         }
-        $writeRange = $sheetPrefix . $startA1;
+        // writeCells 会补全 sheetId! 与 A1:B1 结束格
+        $writeRange = $sheetPrefix . $startCol . $nextRow;
         $this->writeCells($accessToken, $openId, $spreadsheetId, $writeRange, $values);
 
         $readRange = $sheetPrefix . 'A' . $nextRow . ':Z' . $endRow;
@@ -1303,7 +1323,7 @@ class TencentSheets
             $request['columnCount'] = $columnCount;
         }
 
-        $uri = sprintf('/openapi/spreadsheet/v3/files/%s/batchUpdate', rawurlencode($spreadsheetId));
+        $uri = sprintf('/openapi/spreadsheet/v3/files/%s/batchUpdate', $this->encodeFileId($spreadsheetId));
 
         return $this->client->request(
             'POST',
@@ -1329,7 +1349,7 @@ class TencentSheets
         string $openId,
         string $spreadsheetId,
     ): array {
-        $uri = sprintf('/openapi/drive/v2/files/%s/permission', rawurlencode($spreadsheetId));
+        $uri = sprintf('/openapi/drive/v2/files/%s/permission', $this->encodeFileId($spreadsheetId));
 
         return $this->client->request(
             'PATCH',
@@ -1496,7 +1516,7 @@ class TencentSheets
         string $targetFolderId,
         string $parentFolderId = self::ROOT_FOLDER_ID,
     ): array {
-        $uri = sprintf('/openapi/drive/v2/files/%s/move', rawurlencode($fileId));
+        $uri = sprintf('/openapi/drive/v2/files/%s/move', $this->encodeFileId($fileId));
 
         return $this->client->request(
             'PATCH',
@@ -1553,6 +1573,17 @@ class TencentSheets
         ?string $sheetRef,
     ): string {
         $sheets = $this->listSheets($accessToken, $openId, $spreadsheetId);
+        // Drive 创建的 sheet 文件可能尚未初始化子表，自动补一张默认工作表
+        if ($sheets === []) {
+            $title = ($sheetRef !== null && $sheetRef !== '') ? $sheetRef : 'Sheet1';
+            $created = $this->addSheet($accessToken, $openId, $spreadsheetId, $title);
+            $createdId = $this->extractSheetIdFromAddResponse($created);
+            if ($createdId !== '') {
+                return $createdId;
+            }
+            $sheets = $this->listSheets($accessToken, $openId, $spreadsheetId);
+        }
+
         if ($sheets === []) {
             throw new TencentApiException('Spreadsheet has no sheets', 404);
         }
@@ -1576,6 +1607,188 @@ class TencentSheets
         }
 
         throw new TencentApiException("Sheet not found: {$sheetRef}", 404, ['sheets' => $sheets]);
+    }
+
+    /**
+     * 腾讯文档 fileId 含 `$`（如 300000000$xxxx），官方示例路径中不编码。
+     * rawurlencode 会变成 %24，spreadsheet v3 可能查不到子表（properties 为空）.
+     */
+    private function encodeFileId(string $fileId): string
+    {
+        return str_replace('%24', '$', rawurlencode($fileId));
+    }
+
+    /**
+     * sheetbook v2 要求 values 为 string 二维数组.
+     *
+     * @param list<list<mixed>> $rows
+     * @return list<list<string>>
+     */
+    private function stringifyRows(array $rows): array
+    {
+        $result = [];
+        foreach ($rows as $row) {
+            $line = [];
+            foreach ($row as $cell) {
+                if ($cell === null) {
+                    $line[] = '';
+                } elseif (is_bool($cell)) {
+                    $line[] = $cell ? 'TRUE' : 'FALSE';
+                } else {
+                    $line[] = (string) $cell;
+                }
+            }
+            $result[] = $line;
+        }
+
+        return $result;
+    }
+
+    /**
+     * 将 A1 或 A1:B2 按 values 行列扩展为完整区间（v2 校验行列一致）.
+     *
+     * @param list<list<mixed>> $values
+     */
+    private function expandA1Range(string $a1Range, array $values): string
+    {
+        $rowCount = max(1, count($values));
+        $colCount = 1;
+        foreach ($values as $row) {
+            $colCount = max($colCount, count($row));
+        }
+
+        if (preg_match('/^([A-Za-z]+)(\d+)(?::([A-Za-z]+)(\d+))?$/', $a1Range, $m) !== 1) {
+            return $a1Range;
+        }
+
+        $startCol = $m[1];
+        $startRow = (int) $m[2];
+        $endCol = $this->columnName($this->columnIndex($startCol) + $colCount - 1);
+        $endRow = $startRow + $rowCount - 1;
+
+        if ($endCol === $startCol && $endRow === $startRow) {
+            return $startCol . $startRow;
+        }
+
+        return $startCol . $startRow . ':' . $endCol . $endRow;
+    }
+
+    /**
+     * 读取子表可用行数（rowTotal），用于 append 探测范围，避免 RangeSize Validate error.
+     */
+    private function resolveSheetRowTotal(
+        string $accessToken,
+        string $openId,
+        string $spreadsheetId,
+        ?string $sheetRef,
+    ): int {
+        $sheets = $this->listSheets($accessToken, $openId, $spreadsheetId);
+        $target = null;
+        if ($sheetRef === null || $sheetRef === '') {
+            $target = $sheets[0] ?? null;
+        } else {
+            foreach ($sheets as $sheet) {
+                $id = (string) ($sheet['sheetId'] ?? $sheet['sheetID'] ?? $sheet['ID'] ?? '');
+                $title = (string) ($sheet['title'] ?? '');
+                if ($id === $sheetRef || $title === $sheetRef) {
+                    $target = $sheet;
+                    break;
+                }
+            }
+            $target ??= $sheets[0] ?? null;
+        }
+
+        $total = (int) ($target['rowTotal'] ?? $target['rowCount'] ?? 0);
+        if ($total <= 0) {
+            $total = 200;
+        }
+
+        return min($total, 5000);
+    }
+
+    /**
+     * 从 spreadsheet v3 响应中提取工作表 properties 列表.
+     *
+     * @param array<string, mixed> $response
+     * @return list<array<string, mixed>>
+     */
+    private function extractSheetProperties(array $response): array
+    {
+        $properties = $response['data']['properties']
+            ?? $response['properties']
+            ?? $response['data']['sheets']
+            ?? $response['sheets']
+            ?? [];
+
+        if (! is_array($properties) || $properties === []) {
+            return [];
+        }
+
+        // 单张子表对象：{"sheetId":"...","title":"..."}
+        if ($this->isSheetProperty($properties)) {
+            return [$properties];
+        }
+
+        $sheets = [];
+        foreach ($properties as $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+            // sheets[].properties
+            if (isset($item['properties']) && is_array($item['properties']) && $this->isSheetProperty($item['properties'])) {
+                $sheets[] = $item['properties'];
+                continue;
+            }
+            if ($this->isSheetProperty($item)) {
+                $sheets[] = $item;
+            }
+        }
+
+        return array_values($sheets);
+    }
+
+    /**
+     * @param array<string, mixed> $value
+     */
+    private function isSheetProperty(array $value): bool
+    {
+        return isset($value['sheetId'])
+            || isset($value['sheetID'])
+            || (isset($value['ID'], $value['title']))
+            || (isset($value['title']) && (isset($value['rowCount']) || isset($value['rowTotal'])));
+    }
+
+    /**
+     * @param array<string, mixed> $response
+     */
+    private function extractSheetIdFromAddResponse(array $response): string
+    {
+        $replies = $response['data']['responses']
+            ?? $response['responses']
+            ?? $response['data']['replies']
+            ?? [];
+
+        if (! is_array($replies)) {
+            return '';
+        }
+
+        foreach ($replies as $reply) {
+            if (! is_array($reply)) {
+                continue;
+            }
+            $props = $reply['addSheetResponse']['properties']
+                ?? $reply['addSheet']['properties']
+                ?? null;
+            if (! is_array($props)) {
+                continue;
+            }
+            $id = (string) ($props['sheetId'] ?? $props['sheetID'] ?? $props['ID'] ?? '');
+            if ($id !== '') {
+                return $id;
+            }
+        }
+
+        return '';
     }
 
     /**

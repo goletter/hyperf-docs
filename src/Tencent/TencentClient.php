@@ -135,7 +135,7 @@ class TencentClient
     protected function decodeResponse(ResponseInterface $response, bool $expectBizRet = true): array
     {
         $status = $response->getStatusCode();
-        $raw = (string) $response->getBody();
+        $raw = $this->decodeBody((string) $response->getBody());
         $decoded = $raw === '' ? [] : (json_decode($raw, true) ?? []);
 
         if (! is_array($decoded)) {
@@ -216,5 +216,21 @@ class TencentClient
         }
 
         return $fallback !== '' ? $fallback : 'Tencent Docs API error';
+    }
+
+    /**
+     * 腾讯文档部分接口返回 gzip 正文但 Content-Encoding 不规范，Guzzle 不会自动解压，
+     * json_decode 失败后会变成 []，表现为 Spreadsheet has no sheets.
+     */
+    protected function decodeBody(string $raw): string
+    {
+        if ($raw !== '' && str_starts_with($raw, "\x1f\x8b")) {
+            $decoded = @gzdecode($raw);
+            if (is_string($decoded) && $decoded !== '') {
+                return $decoded;
+            }
+        }
+
+        return $raw;
     }
 }
