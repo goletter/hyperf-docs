@@ -4,6 +4,7 @@ Hyperf 文档平台扩展包，支持多平台：
 
 - **Google**：OAuth、Sheets、Drive（gid 定位、追加、按内容查找、受保护列 / 勾选框）
 - **腾讯文档**：OAuth、在线表格、文件夹、分享权限
+- **飞书**：OAuth（user_access_token）、电子表格、云空间文件夹、链接分享
 
 ## 安装
 
@@ -86,6 +87,13 @@ return [
             // OAuth 文档要求 scope 固定为 all；实际权限以开放平台已开通权限为准
             'scopes' => env('TENCENT_DOCS_SCOPES', 'all'),
         ],
+        'feishu' => [
+            'app_id' => env('FEISHU_APP_ID'),
+            'app_secret' => env('FEISHU_APP_SECRET'),
+            'redirect_uri' => env('FEISHU_REDIRECT_URI'),
+            'drive_root_folder' => env('FEISHU_DRIVE_ROOT_FOLDER_NAME', 'Goletter'),
+            'scopes' => env('FEISHU_SCOPES', 'sheets:spreadsheet drive:drive offline_access'),
+        ],
     ],
 ];
 ```
@@ -113,14 +121,24 @@ TENCENT_DOCS_DRIVE_ROOT_FOLDER_NAME=Goletter
 TENCENT_DOCS_SCOPES=all
 TENCENT_DOCS_TOKEN=
 TENCENT_DOCS_OPEN_ID=
+
+# 飞书（开放平台 App ID / App Secret）
+FEISHU_APP_ID=
+FEISHU_APP_SECRET=
+FEISHU_REDIRECT_URI=
+FEISHU_DRIVE_ROOT_FOLDER_NAME=Goletter
+FEISHU_SCOPES=sheets:spreadsheet drive:drive offline_access
+FEISHU_TOKEN=
+FEISHU_REFRESH_TOKEN=
 ```
 
 > Google：`access_token` 短期有效，请保存 `refresh_token` 并在过期后刷新。  
-> 腾讯文档需先在 [开放合作平台](https://docs.qq.com/open) 创建应用并完成审核；OpenAPI 除 `Access-Token` 外必须带 `Open-Id`（换 token 回包中的 `user_id`）。表格接口通常需要 `scope.sheet` / `scope.sheet.readonly`。
+> 腾讯文档需先在 [开放合作平台](https://docs.qq.com/open) 创建应用并完成审核；OpenAPI 除 `Access-Token` 外必须带 `Open-Id`（换 token 回包中的 `user_id`）。表格接口通常需要 `scope.sheet` / `scope.sheet.readonly`。  
+> 飞书需在 [开放平台](https://open.feishu.cn/) 创建应用，开通电子表格 / 云文档权限，并配置重定向 URL。授权 scope 须含 `offline_access` 才能拿到 `refresh_token`（每次刷新都会换新的 refresh_token，旧的立即失效）。token 只需 `access_token`，无需 `open_id`。
 
 ## 使用
 
-两个平台都已定义，通过**工厂模式**创建，可同时配置、按需选用。
+三个平台都已定义，通过**工厂模式**创建，可同时配置、按需选用。
 
 ```php
 use Goletter\Docs\DocsManager;
@@ -135,6 +153,7 @@ protected PlatformFactoryInterface $factory;
 
 $google = $this->docs->platform('google');
 $tencent = $this->docs->platform('tencent');
+$feishu = $this->docs->platform('feishu');
 $authUrl = $this->docs->auth('google')->getAuthUrl();
 
 $file = $this->docs->sheets('google')->createSpreadsheet(
@@ -147,6 +166,11 @@ $file = $this->docs->sheets('tencent')->createSpreadsheet(
         'access_token' => $tencentToken['access_token'],
         'open_id' => $tencentToken['open_id'],
     ],
+    '报表'
+);
+
+$file = $this->docs->sheets('feishu')->createSpreadsheet(
+    ['access_token' => $feishuToken['access_token']],
     '报表'
 );
 ```
@@ -517,27 +541,85 @@ $this->sheets->shareSpreadsheetForAnyoneReader($accessToken, $openId, $spreadshe
 
 权限变更或接口报 `Request Scope Invalid` 时：在开放平台开通表格相关权限 → 用户重新授权换新 token。
 
+### 飞书 OAuth / 电子表格
+
+```php
+use Goletter\Docs\Feishu\FeishuAuth;
+use Goletter\Docs\Feishu\FeishuSheets;
+use Hyperf\Di\Annotation\Inject;
+
+#[Inject]
+protected FeishuAuth $auth;
+
+#[Inject]
+protected FeishuSheets $sheets;
+
+$authUrl = $this->auth->getAuthUrl(state: 'xyz');
+$token = $this->auth->fetchToken($code);
+// $token['access_token']、$token['refresh_token']（须含 offline_access）
+// 刷新后务必保存新的 refresh_token，旧值立即失效
+
+$file = $this->docs->sheets('feishu')->createSpreadsheet(
+    ['access_token' => $token['access_token']],
+    '报表'
+);
+$spreadsheetToken = $file['id'];
+
+// 从分享链接解析 spreadsheetToken / sheetId（?sheet=）
+// https://xxx.feishu.cn/sheets/shtcnXXXX?sheet=0b12
+$parsed = $this->docs->sheets('feishu')->parseSpreadsheetUrl($url);
+// 或：Goletter\Docs\Support\SheetUrl::parseFeishu($url)
+
+$sheets = $this->docs->sheets('feishu');
+$tokenPayload = ['access_token' => $token['access_token']];
+
+// range：默认第一张表；也可用 sheetId / 标题
+$values = $sheets->readCells($tokenPayload, $spreadsheetToken, 'A1:Z1000');
+$sheets->writeCells($tokenPayload, $spreadsheetToken, 'A1', [['姓名', '部门']]);
+$sheets->appendCells($tokenPayload, $spreadsheetToken, 'A1', ['张三', '技术部']);
+$sheets->insertAfterHeader($tokenPayload, $spreadsheetToken, $parsed['sheet_id'] ?: 'A1', [
+    ['李四', '产品部'],
+]);
+$sheets->upsertRows($tokenPayload, $spreadsheetToken, 'A1:Z1000', [
+    ['张三', '技术部'],
+], column: 'A');
+
+$sheets->moveSpreadsheetToDateFolder($tokenPayload, $spreadsheetToken);
+$sheets->shareSpreadsheetForAnyoneReader($tokenPayload, $spreadsheetToken);
+```
+
+飞书 `range` 最终会解析成 `{sheetId}!A1:B2`：
+
+| 写法 | 说明 |
+| --- | --- |
+| `A1:Z100` | 默认第一个工作表 |
+| `{sheetId}!A1:Z100` | 指定工作表 ID |
+| `sheet:{sheetId}!A1` | 同上（带前缀） |
+| `{标题}!A1:Z100` | 按工作表标题解析 |
+
+> 列区块 `insertBlock` / `upsertBlock`：飞书 `insert_dimension` 是整行插入，区块场景采用「读区块 + 合并写回」，只改指定列，不影响左右其它块（与腾讯类似）。表头下整表插入走原生 `insert_dimension_range`。
+
 ## 能力对照
 
-| 能力 | Google | 腾讯文档 |
-| --- | --- | --- |
-| OAuth 授权 / 刷新 | ✅ | ✅ |
-| 创建表格 | ✅ Spreadsheet | ✅ `type=sheet` |
-| 读单元格 | ✅ Values（过滤空行） | ✅ spreadsheet v3 |
-| 写单元格 | ✅ Values（null 跳过保护列） | ✅ sheetbook v2 |
-| 编辑指定行 | ✅ `updateRow`（行号 / 按列查找） | ✅ `updateRow` |
-| 删除指定行 | ✅ `deleteRow`（行号 / 按列查找） | ✅ `deleteRow` |
-| 追加行 | ✅ `appendCells` | ✅ `appendCells` |
-| 表头下插入 | ✅ `insertAfterHeader` | ✅ `insertAfterHeader` |
-| 按条件 upsert | ✅ `upsertRows` | ✅ `upsertRows` |
-| 列区块插入 | ✅ `insertBlock` | ✅ `insertBlock` |
-| 列区块 upsert | ✅ `upsertBlock` | ✅ `upsertBlock` |
-| 按列内容查找 | ✅ `findRows` | ✅ `findRows` |
-| gid / sheetId 定位 | ✅ URL `#gid=` | ✅ 标题或 sheetId |
-| 勾选框 | ✅ `true` / `false` | — |
-| 添加工作表 | ✅ | ✅ spreadsheet v3 batchUpdate |
-| 移动到日期目录 | ✅ Drive | ✅ folders + move |
-| 公开只读分享 | ✅ anyone reader | ✅ `publicRead` |
+| 能力 | Google | 腾讯文档 | 飞书 |
+| --- | --- | --- | --- |
+| OAuth 授权 / 刷新 | ✅ | ✅ | ✅ user_access_token |
+| 创建表格 | ✅ Spreadsheet | ✅ `type=sheet` | ✅ sheets v3 |
+| 读单元格 | ✅ Values（过滤空行） | ✅ spreadsheet v3 | ✅ sheets v2 values |
+| 写单元格 | ✅ Values（null 跳过保护列） | ✅ sheetbook v2 | ✅ sheets v2 values |
+| 编辑指定行 | ✅ `updateRow` | ✅ `updateRow` | ✅ `updateRow` |
+| 删除指定行 | ✅ `deleteRow` | ✅ `deleteRow` | ✅ `deleteRow` |
+| 追加行 | ✅ `appendCells` | ✅ `appendCells` | ✅ `values_append` |
+| 表头下插入 | ✅ `insertAfterHeader` | ✅ 读后写回 | ✅ `insert_dimension` |
+| 按条件 upsert | ✅ `upsertRows` | ✅ `upsertRows` | ✅ `upsertRows` |
+| 列区块插入 | ✅ `insertBlock` | ✅ `insertBlock` | ✅ 区块读写回 |
+| 列区块 upsert | ✅ `upsertBlock` | ✅ `upsertBlock` | ✅ `upsertBlock` |
+| 按列内容查找 | ✅ `findRows` | ✅ `findRows` | ✅ `findRows` |
+| 子表定位 | ✅ URL `#gid=` | ✅ 标题 / sheetId | ✅ 标题 / sheetId / `?sheet=` |
+| 勾选框 | ✅ `true` / `false` | — | — |
+| 添加工作表 | ✅ | ✅ | ✅ sheets_batch_update |
+| 移动到日期目录 | ✅ Drive | ✅ folders + move | ✅ Drive files |
+| 公开只读分享 | ✅ anyone reader | ✅ `publicRead` | ✅ link_share |
 
 ## 测试命令
 
@@ -551,6 +633,10 @@ php bin/hyperf.php docs:test --platform=google --token=xxx
 # 腾讯文档
 php bin/hyperf.php docs:test --platform=tencent --auth-url
 php bin/hyperf.php docs:test --platform=tencent --token=xxx --open-id=yyy
+
+# 飞书
+php bin/hyperf.php docs:test --platform=feishu --auth-url
+php bin/hyperf.php docs:test --platform=feishu --token=xxx
 ```
 
-业务侧也可自建命令，用 `DocsManager` + `gid` / `appendCells` / `findRows` 做联调。
+业务侧也可自建命令，用 `DocsManager` + `appendCells` / `findRows` 做联调。

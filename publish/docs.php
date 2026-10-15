@@ -5,7 +5,7 @@ declare(strict_types=1);
 use function Hyperf\Support\env;
 
 return [
-    // 默认文档平台：google / tencent
+    // 默认文档平台：google / tencent / feishu
     'default' => env('DOCS_PLATFORM', 'google'),
 
     /*
@@ -40,6 +40,19 @@ return [
             'drive_root_folder' => env('TENCENT_DOCS_DRIVE_ROOT_FOLDER_NAME', 'Goletter'),
             // 授权 scope，all 表示申请应用已开通的全部权限；也可按需配置为逗号分隔字符串
             'scopes' => env('TENCENT_DOCS_SCOPES', 'all'),
+        ],
+
+        'feishu' => [
+            // 开放平台凭证：App ID / App Secret（也兼容 client_id / client_secret）
+            'app_id' => env('FEISHU_APP_ID'),
+            'app_secret' => env('FEISHU_APP_SECRET'),
+            'redirect_uri' => env('FEISHU_REDIRECT_URI'),
+            'drive_root_folder' => env('FEISHU_DRIVE_ROOT_FOLDER_NAME', 'Goletter'),
+            // 空格或逗号分隔；offline_access 用于拿到 refresh_token
+            'scopes' => env(
+                'FEISHU_SCOPES',
+                'sheets:spreadsheet drive:drive offline_access'
+            ),
         ],
     ],
 ];

@@ -154,4 +154,65 @@ final class SheetUrl
 
         return $url;
     }
+
+    /**
+     * 解析飞书 / Lark 电子表格 URL.
+     *
+     * 例：
+     * - https://xxx.feishu.cn/sheets/{spreadsheetToken}?sheet={sheetId}
+     * - https://xxx.larksuite.com/sheets/{spreadsheetToken}?sheet={sheetId}
+     * - 也可直接传 spreadsheetToken
+     *
+     * @return array{spreadsheet_id: string, sheet_id: string, url: string}
+     */
+    public static function parseFeishu(string $url): array
+    {
+        $url = trim($url);
+        if ($url === '') {
+            throw new InvalidArgumentException('Feishu sheet url is empty');
+        }
+
+        $spreadsheetId = '';
+        $sheetId = '';
+
+        if (preg_match('~/sheets/([^/?#]+)~i', $url, $matches) === 1) {
+            $spreadsheetId = $matches[1];
+        } elseif (preg_match('~^[A-Za-z0-9_-]+$~', $url) === 1) {
+            $spreadsheetId = $url;
+        }
+
+        $query = parse_url($url, PHP_URL_QUERY);
+        if (is_string($query) && $query !== '') {
+            parse_str($query, $params);
+            $sheetId = (string) ($params['sheet'] ?? '');
+        }
+
+        if ($spreadsheetId === '') {
+            throw new InvalidArgumentException('Invalid Feishu sheet url: missing /sheets/{token}');
+        }
+
+        return [
+            'spreadsheet_id' => $spreadsheetId,
+            'sheet_id' => $sheetId,
+            'url' => self::buildFeishu($spreadsheetId, $sheetId !== '' ? $sheetId : null),
+        ];
+    }
+
+    /**
+     * 由 spreadsheetToken（及可选 sheetId）生成飞书表格链接（默认 feishu.cn 域名）.
+     */
+    public static function buildFeishu(string $spreadsheetToken, ?string $sheetId = null): string
+    {
+        $spreadsheetToken = trim($spreadsheetToken);
+        if ($spreadsheetToken === '') {
+            throw new InvalidArgumentException('Feishu spreadsheet token is empty');
+        }
+
+        $url = 'https://feishu.cn/sheets/' . rawurlencode($spreadsheetToken);
+        if (is_string($sheetId) && $sheetId !== '') {
+            $url .= '?sheet=' . rawurlencode($sheetId);
+        }
+
+        return $url;
+    }
 }

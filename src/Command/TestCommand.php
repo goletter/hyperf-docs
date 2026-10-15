@@ -6,7 +6,9 @@ namespace Goletter\Docs\Command;
 
 use Goletter\Docs\Contract\PlatformInterface;
 use Goletter\Docs\DocsManager;
+use Goletter\Docs\Feishu\Exceptions\FeishuApiException;
 use Goletter\Docs\Google\Exceptions\GoogleApiException;
+use Goletter\Docs\Platform\FeishuPlatform;
 use Goletter\Docs\Platform\TencentPlatform;
 use Goletter\Docs\Tencent\Exceptions\TencentApiException;
 use Hyperf\Command\Annotation\Command;
@@ -41,8 +43,8 @@ class TestCommand extends HyperfCommand
         parent::configure();
 
         $this
-            ->setDescription('测试文档平台（Google / 腾讯）OAuth、表格、目录、分享')
-            ->addOption('platform', 'p', InputOption::VALUE_OPTIONAL, '平台：google / tencent，默认取 docs.default')
+            ->setDescription('测试文档平台（Google / 腾讯 / 飞书）OAuth、表格、目录、分享')
+            ->addOption('platform', 'p', InputOption::VALUE_OPTIONAL, '平台：google / tencent / feishu，默认取 docs.default')
             ->addOption('auth-url', null, InputOption::VALUE_NONE, '只输出 OAuth 授权地址')
             ->addOption('token', null, InputOption::VALUE_OPTIONAL, 'OAuth access token')
             ->addOption('open-id', null, InputOption::VALUE_OPTIONAL, '腾讯文档 Open-Id（user_id）')
@@ -64,9 +66,9 @@ class TestCommand extends HyperfCommand
 
             $token = $this->tokenPayload($platformName);
             if ($token['access_token'] === '') {
-                $this->error(sprintf(
-                    '缺少 access token，请通过 --token 或环境变量传入（Google: GOOGLE_TOKEN，腾讯: TENCENT_DOCS_TOKEN）。'
-                ));
+                $this->error(
+                    '缺少 access token，请通过 --token 或环境变量传入（Google: GOOGLE_TOKEN，腾讯: TENCENT_DOCS_TOKEN，飞书: FEISHU_TOKEN）。'
+                );
                 if ($platformName === TencentPlatform::NAME) {
                     $this->line('腾讯文档还需 --open-id 或 TENCENT_DOCS_OPEN_ID。');
                 }
@@ -87,7 +89,7 @@ class TestCommand extends HyperfCommand
             $this->line($this->toJson($result));
 
             return self::SUCCESS;
-        } catch (GoogleApiException|TencentApiException $e) {
+        } catch (GoogleApiException|TencentApiException|FeishuApiException $e) {
             $this->error('Docs API 调用失败');
             $this->line($this->toJson([
                 'code' => $e->getCode(),
@@ -197,9 +199,11 @@ class TestCommand extends HyperfCommand
     {
         $token = trim((string) ($this->input->getOption('token') ?: ''));
         if ($token === '') {
-            $token = $platformName === TencentPlatform::NAME
-                ? trim((string) env('TENCENT_DOCS_TOKEN', ''))
-                : trim((string) env('GOOGLE_TOKEN', ''));
+            $token = match ($platformName) {
+                TencentPlatform::NAME => trim((string) env('TENCENT_DOCS_TOKEN', '')),
+                FeishuPlatform::NAME => trim((string) env('FEISHU_TOKEN', '')),
+                default => trim((string) env('GOOGLE_TOKEN', '')),
+            };
         }
 
         $payload = ['access_token' => $token];
@@ -226,9 +230,11 @@ class TestCommand extends HyperfCommand
             return $folder;
         }
 
-        $configKey = $platformName === TencentPlatform::NAME
-            ? 'docs.platforms.tencent.drive_root_folder'
-            : 'docs.platforms.google.drive_root_folder';
+        $configKey = match ($platformName) {
+            TencentPlatform::NAME => 'docs.platforms.tencent.drive_root_folder',
+            FeishuPlatform::NAME => 'docs.platforms.feishu.drive_root_folder',
+            default => 'docs.platforms.google.drive_root_folder',
+        };
 
         $folder = trim((string) $this->config->get($configKey, self::DEFAULT_DRIVE_ROOT_FOLDER));
 

@@ -10,11 +10,12 @@ use Goletter\Docs\Contract\PlatformInterface;
 use Goletter\Docs\Contract\SheetsInterface;
 
 /**
- * 文档平台门面：基于工厂创建 Google / 腾讯等平台.
+ * 文档平台门面：基于工厂创建 Google / 腾讯 / 飞书等平台.
  *
  * @example
  * $docs->platform('google')->auth()->getAuthUrl();
  * $docs->platform('tencent')->sheets()->createSpreadsheet($token, '报表');
+ * $docs->platform('feishu')->sheets()->createSpreadsheet($token, '报表');
  * $docs->factory()->make('google');
  */
 class DocsManager

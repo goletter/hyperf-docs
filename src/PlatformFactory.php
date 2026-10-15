@@ -6,6 +6,7 @@ namespace Goletter\Docs;
 
 use Goletter\Docs\Contract\PlatformFactoryInterface;
 use Goletter\Docs\Contract\PlatformInterface;
+use Goletter\Docs\Platform\FeishuPlatform;
 use Goletter\Docs\Platform\GooglePlatform;
 use Goletter\Docs\Platform\TencentPlatform;
 use Hyperf\Contract\ConfigInterface;
@@ -13,10 +14,10 @@ use InvalidArgumentException;
 use Psr\Container\ContainerInterface;
 
 /**
- * 文档平台工厂：根据配置 / 名称创建 Google、Tencent 等 Platform.
+ * 文档平台工厂：根据配置 / 名称创建 Google、Tencent、Feishu 等 Platform.
  *
  * 驱动来源：
- * 1. 内置 google / tencent
+ * 1. 内置 google / tencent / feishu
  * 2. config docs.platforms 中的 key（需有对应 class，见 platforms_map 或内置）
  * 3. config docs.platforms_map 自定义 class 映射（可覆盖内置）
  */
@@ -33,6 +34,7 @@ class PlatformFactory implements PlatformFactoryInterface
     protected array $builtins = [
         GooglePlatform::NAME => GooglePlatform::class,
         TencentPlatform::NAME => TencentPlatform::class,
+        FeishuPlatform::NAME => FeishuPlatform::class,
     ];
 
     public function __construct(

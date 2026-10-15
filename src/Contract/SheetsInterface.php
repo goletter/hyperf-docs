@@ -210,6 +210,7 @@ interface SheetsInterface
      *
      * Google：spreadsheet_id + gid
      * 腾讯：spreadsheet_id + sheet_id（URL ?tab=）
+     * 飞书：spreadsheet_id + sheet_id（URL ?sheet=）
      *
      * @return array<string, string>
      */
