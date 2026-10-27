@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Goletter\Docs;
 
+use Goletter\Docs\Config\PlatformConfigRepositoryFactory;
+use Goletter\Docs\Contract\PlatformConfigRepositoryInterface;
 use Goletter\Docs\Contract\PlatformFactoryInterface;
 
 class ConfigProvider
@@ -12,6 +14,7 @@ class ConfigProvider
     {
         return [
             'dependencies' => [
+                PlatformConfigRepositoryInterface::class => PlatformConfigRepositoryFactory::class,
                 PlatformFactoryInterface::class => PlatformFactory::class,
                 PlatformFactory::class => PlatformFactory::class,
                 DocsManager::class => DocsManager::class,
@@ -26,7 +29,7 @@ class ConfigProvider
             'publish' => [
                 [
                     'id' => 'config',
-                    'description' => 'The config of Docs platforms (Google / Tencent).',
+                    'description' => 'The config of Docs platforms (Google / Tencent / Feishu).',
                     'source' => __DIR__ . '/../publish/docs.php',
                     'destination' => BASE_PATH . '/config/autoload/docs.php',
                 ],

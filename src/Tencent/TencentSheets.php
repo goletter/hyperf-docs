@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Goletter\Docs\Tencent;
 
 use Goletter\Docs\Tencent\Exceptions\TencentApiException;
-use Hyperf\Contract\ConfigInterface;
 
 class TencentSheets
 {
@@ -17,7 +16,6 @@ class TencentSheets
 
     public function __construct(
         protected TencentClient $client,
-        protected ConfigInterface $config,
     ) {
     }
 
@@ -1383,7 +1381,7 @@ class TencentSheets
         string $parentFolderId = self::ROOT_FOLDER_ID,
     ): array {
         $rootName = $rootFolderName
-            ?: (string) $this->config->get('docs.platforms.tencent.drive_root_folder', self::DEFAULT_ROOT_FOLDER);
+            ?: (string) $this->client->option('drive_root_folder', self::DEFAULT_ROOT_FOLDER);
         $dateName = $date ?? date('Y-m-d');
 
         $rootFolder = $this->getOrCreateFolder($accessToken, $openId, $rootName, $parentFolderId);

@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Goletter\Docs\Feishu;
 
 use Goletter\Docs\Feishu\Exceptions\FeishuApiException;
-use Hyperf\Contract\ConfigInterface;
 
 /**
  * 飞书电子表格（Sheets v2/v3 + Drive）.
@@ -24,7 +23,6 @@ class FeishuSheets
 
     public function __construct(
         protected FeishuClient $client,
-        protected ConfigInterface $config,
     ) {
     }
 
@@ -679,10 +677,7 @@ class FeishuSheets
         ?string $parentFolderToken = null,
     ): array {
         $rootName = $rootFolderName
-            ?: (string) $this->config->get(
-                'docs.platforms.feishu.drive_root_folder',
-                self::DEFAULT_ROOT_FOLDER
-            );
+            ?: (string) $this->client->option('drive_root_folder', self::DEFAULT_ROOT_FOLDER);
         $dateName = $date ?? date('Y-m-d');
 
         $rootFolder = $this->getOrCreateFolder($accessToken, $rootName, $parentFolderToken);

@@ -21,7 +21,6 @@ use Google\Service\Sheets\InsertRangeRequest;
 use Google\Service\Sheets\Request;
 use Google\Service\Sheets\Spreadsheet;
 use Google\Service\Sheets\ValueRange;
-use Hyperf\Contract\ConfigInterface;
 
 class GoogleSheets
 {
@@ -35,7 +34,6 @@ class GoogleSheets
 
     public function __construct(
         protected GoogleClient $googleClient,
-        protected ConfigInterface $config,
     ) {
     }
 
@@ -1467,7 +1465,7 @@ class GoogleSheets
         return $this->googleClient->request(function () use ($accessToken, $spreadsheetId, $rootFolderName, $date) {
             $service = $this->getDriveService($accessToken);
             $rootName = $rootFolderName
-                ?: (string) $this->config->get('docs.platforms.google.drive_root_folder', self::DEFAULT_ROOT_FOLDER);
+                ?: (string) $this->googleClient->option('drive_root_folder', self::DEFAULT_ROOT_FOLDER);
             $dateName = $date ?? date('Y-m-d');
             $rootFolder = $this->getOrCreateFolder($service, $rootName);
             $dateFolder = $this->getOrCreateFolder($service, $dateName, $rootFolder->getId());

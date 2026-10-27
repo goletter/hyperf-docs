@@ -61,6 +61,19 @@ php bin/hyperf.php vendor:publish goletter/hyperf-docs
 return [
     'default' => env('DOCS_PLATFORM', 'google'),
 
+    // file（默认）| database（读库，缺项回落 file）
+    'config_source' => env('DOCS_CONFIG_SOURCE', 'file'),
+
+    'database' => [
+        'connection' => env('DOCS_DB_CONNECTION'), // null = 默认库
+        'table' => env('DOCS_CONFIG_TABLE', 'docs_platform_configs'),
+        'columns' => [
+            'platform' => 'platform',
+            'tenant_id' => 'tenant_id',
+            'payload' => 'config', // JSON
+        ],
+    ],
+
     // 自定义平台 class 映射（工厂可扩展 / 覆盖）
     'platforms_map' => [
         // 'my_docs' => \App\Docs\Platform\MyDocsPlatform::class,
@@ -98,10 +111,100 @@ return [
 ];
 ```
 
+### 从数据库读取平台凭证（使用说明）
+
+**适用**：OAuth 应用凭证（`client_id` / `secret` / `redirect_uri` 等）按环境或租户存在库里，不想写死在 `.env`。  
+**不存**：用户的 `access_token` / `refresh_token`（仍由业务表保存，调用时传入）。
+
+#### 1. 依赖与开关
+
+```bash
+composer require hyperf/database hyperf/db-connection
+```
+
+```env
+DOCS_CONFIG_SOURCE=database
+# DOCS_DB_CONNECTION=      # 空则用默认库
+# DOCS_CONFIG_TABLE=docs_platform_configs
+```
+
+重新发布或手动合并 `config/autoload/docs.php` 中的 `config_source` / `database` 段。
+
+#### 2. 建表并写入配置
+
+```sql
+CREATE TABLE docs_platform_configs (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  platform VARCHAR(32) NOT NULL COMMENT 'google / tencent / feishu',
+  tenant_id VARCHAR(64) NULL COMMENT '空 = 全局；有值 = 该租户',
+  config JSON NOT NULL,
+  updated_at TIMESTAMP NULL,
+  UNIQUE KEY uk_platform_tenant (platform, tenant_id)
+);
+```
+
+插入示例（Google 全局）：
+
+```sql
+INSERT INTO docs_platform_configs (platform, tenant_id, config) VALUES (
+  'google',
+  NULL,
+  JSON_OBJECT(
+    'client_id', 'xxx.apps.googleusercontent.com',
+    'client_secret', 'xxx',
+    'redirect_uri', 'https://example.com/oauth/google/callback',
+    'drive_root_folder', 'Goletter'
+  )
+);
+```
+
+飞书字段可用 `app_id` / `app_secret`（也兼容 `client_id` / `client_secret`）。
+
+合并规则：**库字段覆盖文件**；库里没有的 key 仍用 `docs.platforms.*`（`.env`）兜底。
+
+#### 3. 业务调用（与原来相同）
+
+```php
+use Goletter\Docs\DocsManager;
+
+// 授权 URL / 换 token：凭证从库（或回落文件）读取
+$url = $docs->auth('google')->getAuthUrl($state);
+$token = $docs->auth('google')->fetchToken($code);
+
+// 表格：用户 token 仍要自己传
+$docs->sheets('google')->createSpreadsheet(
+    ['access_token' => $userAccessToken],
+    '月报'
+);
+```
+
+#### 4. 多租户（可选）
+
+在进入业务前设置协程上下文，同一请求内后续读写都会带上该 `tenant_id` 查库：
+
+```php
+use Goletter\Docs\DocsContext;
+
+DocsContext::setTenantId((string) $tenantId);
+
+// 中间件示例：
+// DocsContext::setTenantId((string) $request->getHeaderLine('X-Tenant-Id'));
+```
+
+未设置 `tenant_id` 时查 `tenant_id IS NULL`（或空字符串）的全局行。
+
+#### 5. 自定义配置源（可选）
+
+实现 `Goletter\Docs\Contract\PlatformConfigRepositoryInterface`，在项目 `dependencies` 里覆盖绑定即可（不必改本包）。
+
 环境变量：
 
 ```env
 DOCS_PLATFORM=google
+DOCS_CONFIG_SOURCE=file
+# DOCS_CONFIG_SOURCE=database
+# DOCS_DB_CONNECTION=
+# DOCS_CONFIG_TABLE=docs_platform_configs
 
 # Google
 GOOGLE_CLIENT_ID=

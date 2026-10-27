@@ -7,15 +7,15 @@ namespace Goletter\Docs\Google;
 use Google\Client;
 use Google\Exception as GoogleException;
 use Google\Service\Exception as GoogleServiceException;
+use Goletter\Docs\Contract\PlatformConfigRepositoryInterface;
 use Goletter\Docs\Google\Exceptions\GoogleApiException;
 use Goletter\Docs\Google\Exceptions\GoogleTokenExpiredException;
 use GuzzleHttp\Client as GuzzleClient;
 use GuzzleHttp\Exception\RequestException;
-use Hyperf\Contract\ConfigInterface;
 
 class GoogleClient
 {
-    public function __construct(protected ConfigInterface $config)
+    public function __construct(protected PlatformConfigRepositoryInterface $platformConfig)
     {
     }
 
@@ -120,9 +120,9 @@ class GoogleClient
         return $client;
     }
 
-    protected function option(string $key, mixed $default = null): mixed
+    public function option(string $key, mixed $default = null): mixed
     {
-        return $this->config->get("docs.platforms.google.{$key}", $default);
+        return $this->platformConfig->getOption('google', $key, $default);
     }
 
     /**

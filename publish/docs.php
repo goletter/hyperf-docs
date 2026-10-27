@@ -10,6 +10,44 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | 配置来源：file（默认，读下方 platforms）| database（读库，缺项回落 file）
+    |--------------------------------------------------------------------------
+    */
+    'config_source' => env('DOCS_CONFIG_SOURCE', 'file'),
+
+    /*
+    |--------------------------------------------------------------------------
+    | 数据库配置（config_source=database 时生效）
+    |--------------------------------------------------------------------------
+    |
+    | 表示例：
+    | CREATE TABLE docs_platform_configs (
+    |   id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    |   platform VARCHAR(32) NOT NULL,
+    |   tenant_id VARCHAR(64) NULL,
+    |   config JSON NOT NULL,
+    |   updated_at TIMESTAMP NULL,
+    |   UNIQUE KEY uk_platform_tenant (platform, tenant_id)
+    | );
+    |
+    | config JSON 字段示例：
+    | {"client_id":"...","client_secret":"...","redirect_uri":"...","drive_root_folder":"Goletter"}
+    |
+    | 多租户：DocsContext::setTenantId($id) 后再调用平台 API。
+    |
+    */
+    'database' => [
+        'connection' => env('DOCS_DB_CONNECTION'),
+        'table' => env('DOCS_CONFIG_TABLE', 'docs_platform_configs'),
+        'columns' => [
+            'platform' => 'platform',
+            'tenant_id' => 'tenant_id',
+            'payload' => 'config',
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | 自定义平台映射（工厂可扩展）
     |--------------------------------------------------------------------------
     |

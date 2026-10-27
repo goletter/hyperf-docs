@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Goletter\Docs\Command;
 
+use Goletter\Docs\Contract\PlatformConfigRepositoryInterface;
 use Goletter\Docs\Contract\PlatformInterface;
 use Goletter\Docs\DocsManager;
 use Goletter\Docs\Feishu\Exceptions\FeishuApiException;
@@ -13,7 +14,6 @@ use Goletter\Docs\Platform\TencentPlatform;
 use Goletter\Docs\Tencent\Exceptions\TencentApiException;
 use Hyperf\Command\Annotation\Command;
 use Hyperf\Command\Command as HyperfCommand;
-use Hyperf\Contract\ConfigInterface;
 use InvalidArgumentException;
 use Symfony\Component\Console\Input\InputOption;
 use Throwable;
@@ -33,7 +33,7 @@ class TestCommand extends HyperfCommand
 
     public function __construct(
         protected DocsManager $docs,
-        protected ConfigInterface $config,
+        protected PlatformConfigRepositoryInterface $platformConfig,
     ) {
         parent::__construct(self::COMMAND_NAME);
     }
@@ -230,13 +230,11 @@ class TestCommand extends HyperfCommand
             return $folder;
         }
 
-        $configKey = match ($platformName) {
-            TencentPlatform::NAME => 'docs.platforms.tencent.drive_root_folder',
-            FeishuPlatform::NAME => 'docs.platforms.feishu.drive_root_folder',
-            default => 'docs.platforms.google.drive_root_folder',
-        };
-
-        $folder = trim((string) $this->config->get($configKey, self::DEFAULT_DRIVE_ROOT_FOLDER));
+        $folder = trim((string) $this->platformConfig->getOption(
+            $platformName,
+            'drive_root_folder',
+            self::DEFAULT_DRIVE_ROOT_FOLDER,
+        ));
 
         return $folder === '' ? self::DEFAULT_DRIVE_ROOT_FOLDER : $folder;
     }

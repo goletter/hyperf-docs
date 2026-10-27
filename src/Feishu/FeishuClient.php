@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace Goletter\Docs\Feishu;
 
+use Goletter\Docs\Contract\PlatformConfigRepositoryInterface;
 use Goletter\Docs\Feishu\Exceptions\FeishuApiException;
 use Goletter\Docs\Feishu\Exceptions\FeishuTokenExpiredException;
 use GuzzleHttp\Client as GuzzleClient;
 use GuzzleHttp\Exception\GuzzleException;
 use GuzzleHttp\Exception\RequestException;
-use Hyperf\Contract\ConfigInterface;
 use Psr\Http\Message\ResponseInterface;
 
 class FeishuClient
@@ -20,7 +20,7 @@ class FeishuClient
 
     protected ?GuzzleClient $http = null;
 
-    public function __construct(protected ConfigInterface $config)
+    public function __construct(protected PlatformConfigRepositoryInterface $platformConfig)
     {
     }
 
@@ -107,7 +107,7 @@ class FeishuClient
 
     public function option(string $key, mixed $default = null): mixed
     {
-        return $this->config->get("docs.platforms.feishu.{$key}", $default);
+        return $this->platformConfig->getOption('feishu', $key, $default);
     }
 
     /**

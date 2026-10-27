@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace Goletter\Docs\Tencent;
 
+use Goletter\Docs\Contract\PlatformConfigRepositoryInterface;
 use Goletter\Docs\Tencent\Exceptions\TencentApiException;
 use Goletter\Docs\Tencent\Exceptions\TencentTokenExpiredException;
 use GuzzleHttp\Client as GuzzleClient;
 use GuzzleHttp\Exception\GuzzleException;
 use GuzzleHttp\Exception\RequestException;
-use Hyperf\Contract\ConfigInterface;
 use Psr\Http\Message\ResponseInterface;
 
 class TencentClient
@@ -18,7 +18,7 @@ class TencentClient
 
     protected ?GuzzleClient $http = null;
 
-    public function __construct(protected ConfigInterface $config)
+    public function __construct(protected PlatformConfigRepositoryInterface $platformConfig)
     {
     }
 
@@ -111,7 +111,7 @@ class TencentClient
 
     public function option(string $key, mixed $default = null): mixed
     {
-        return $this->config->get("docs.platforms.tencent.{$key}", $default);
+        return $this->platformConfig->getOption('tencent', $key, $default);
     }
 
     /**

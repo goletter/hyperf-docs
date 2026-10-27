@@ -25,8 +25,13 @@
     "google/apiclient": "^2.19",
     "guzzlehttp/guzzle": "^7.0",
     "hyperf/command": "~3.1.0",
+    "hyperf/context": "~3.1.0",
     "hyperf/contract": "~3.1.0",
     "hyperf/di": "~3.1.0"
+  },
+  "suggest": {
+    "hyperf/database": "Required when docs.config_source=database",
+    "hyperf/db-connection": "Required when docs.config_source=database"
   },
   "autoload": {
     "psr-4": {
