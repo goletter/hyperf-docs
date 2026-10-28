@@ -502,18 +502,13 @@ class GoogleSheets
                     $this->applyValueChunks($accessToken, $spreadsheetId, $chunks);
                 }
 
+                // 直接返回写入值，避免「每更新一行再 values.get 一次」打爆 Read QPM
                 foreach ($toUpdate as $item) {
                     $readRange = $sheetPrefix . 'A' . $item['row'] . ':Z' . $item['row'];
-                    $read = $this->getSheetsService($accessToken)
-                        ->spreadsheets_values
-                        ->get($spreadsheetId, $readRange);
-                    $raw = $read->getValues()[0] ?? [];
                     $updated[] = [
                         'row' => $item['row'],
                         'range' => $readRange,
-                        'values' => is_array($raw)
-                            ? $this->trimTrailingEmptyCells(array_values($raw))
-                            : [],
+                        'values' => $this->trimTrailingEmptyCells(array_values($item['values'])),
                     ];
                 }
             }
@@ -659,20 +654,15 @@ class GoogleSheets
                     $this->applyValueChunks($accessToken, $spreadsheetId, $chunks);
                 }
 
+                // 直接返回写入值，避免「每更新一行再 values.get 一次」打爆 Read QPM
                 foreach ($toUpdate as $item) {
                     $readRange = $block['sheetPrefix']
                         . $block['startColName'] . $item['row']
                         . ':' . $block['endColName'] . $item['row'];
-                    $read = $this->getSheetsService($accessToken)
-                        ->spreadsheets_values
-                        ->get($spreadsheetId, $readRange);
-                    $raw = $read->getValues()[0] ?? [];
                     $updated[] = [
                         'row' => $item['row'],
                         'range' => $readRange,
-                        'values' => is_array($raw)
-                            ? $this->trimTrailingEmptyCells(array_values($raw))
-                            : [],
+                        'values' => $this->trimTrailingEmptyCells(array_values($item['values'])),
                     ];
                 }
             }
