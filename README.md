@@ -70,7 +70,17 @@ return [
         'columns' => [
             'platform' => 'platform',
             'tenant_id' => 'tenant_id',
-            'payload' => 'config', // JSON
+            'payload' => 'config', // 可选 JSON 列；无列/为空则读 attributes
+        ],
+        'attributes' => [
+            'client_id',
+            'client_secret',
+            'redirect_uri',
+            'app_id',
+            'app_secret',
+            'api_key',
+            'drive_root_folder',
+            'scopes',
         ],
     ],
 
@@ -132,33 +142,36 @@ DOCS_CONFIG_SOURCE=database
 
 #### 2. 建表并写入配置
 
+**推荐：平铺列**（无 JSON）：
+
 ```sql
 CREATE TABLE docs_platform_configs (
   id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-  platform VARCHAR(32) NOT NULL COMMENT 'google / tencent / feishu',
-  tenant_id VARCHAR(64) NULL COMMENT '空 = 全局；有值 = 该租户',
-  config JSON NOT NULL,
-  updated_at TIMESTAMP NULL,
+  platform VARCHAR(32) NOT NULL DEFAULT '' COMMENT 'google / tencent / feishu',
+  tenant_id VARCHAR(100) NOT NULL DEFAULT '' COMMENT '空 = 全局；有值 = 该租户',
+  client_id VARCHAR(100) NOT NULL DEFAULT '',
+  client_secret VARCHAR(100) NOT NULL DEFAULT '',
+  redirect_uri VARCHAR(100) NOT NULL DEFAULT '',
+  remark VARCHAR(200) NULL,
+  created_at DATETIME NULL,
+  updated_at DATETIME NULL,
   UNIQUE KEY uk_platform_tenant (platform, tenant_id)
 );
 ```
 
-插入示例（Google 全局）：
-
 ```sql
-INSERT INTO docs_platform_configs (platform, tenant_id, config) VALUES (
+INSERT INTO docs_platform_configs (platform, tenant_id, client_id, client_secret, redirect_uri) VALUES (
   'google',
-  NULL,
-  JSON_OBJECT(
-    'client_id', 'xxx.apps.googleusercontent.com',
-    'client_secret', 'xxx',
-    'redirect_uri', 'https://example.com/oauth/google/callback',
-    'drive_root_folder', 'Goletter'
-  )
+  '',
+  'xxx.apps.googleusercontent.com',
+  'xxx',
+  'https://example.com/oauth/google/callback'
 );
 ```
 
-飞书字段可用 `app_id` / `app_secret`（也兼容 `client_id` / `client_secret`）。
+也兼容旧的 JSON 列 `config`：有值时优先用 JSON；没有该列或为空则读 `attributes` 平铺字段。空字符串不会覆盖 `.env` 兜底。
+
+飞书可用 `app_id` / `app_secret`（也兼容 `client_id` / `client_secret`），按需把列名加进 `docs.database.attributes`。
 
 合并规则：**库字段覆盖文件**；库里没有的 key 仍用 `docs.platforms.*`（`.env`）兜底。
 

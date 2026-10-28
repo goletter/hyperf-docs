@@ -20,18 +20,24 @@ return [
     | 数据库配置（config_source=database 时生效）
     |--------------------------------------------------------------------------
     |
-    | 表示例：
+    | 支持两种表结构（优先读 JSON payload；没有或为空则读平铺列）：
+    |
+    | 1) 平铺列（推荐）：
     | CREATE TABLE docs_platform_configs (
     |   id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    |   platform VARCHAR(32) NOT NULL,
-    |   tenant_id VARCHAR(64) NULL,
-    |   config JSON NOT NULL,
-    |   updated_at TIMESTAMP NULL,
+    |   platform VARCHAR(32) NOT NULL DEFAULT '',
+    |   tenant_id VARCHAR(100) NOT NULL DEFAULT '' COMMENT '空 = 全局',
+    |   client_id VARCHAR(100) NOT NULL DEFAULT '',
+    |   client_secret VARCHAR(100) NOT NULL DEFAULT '',
+    |   redirect_uri VARCHAR(100) NOT NULL DEFAULT '',
+    |   remark VARCHAR(200) NULL,
+    |   created_at DATETIME NULL,
+    |   updated_at DATETIME NULL,
     |   UNIQUE KEY uk_platform_tenant (platform, tenant_id)
     | );
     |
-    | config JSON 字段示例：
-    | {"client_id":"...","client_secret":"...","redirect_uri":"...","drive_root_folder":"Goletter"}
+    | 2) JSON 列（兼容旧表）：
+    |   ... + config JSON  —— columns.payload 指向该列
     |
     | 多租户：DocsContext::setTenantId($id) 后再调用平台 API。
     |
@@ -42,7 +48,19 @@ return [
         'columns' => [
             'platform' => 'platform',
             'tenant_id' => 'tenant_id',
+            // JSON 列名；表上没有该列或为空时自动改读 attributes 平铺字段
             'payload' => 'config',
+        ],
+        // 平铺列 → 配置 key（list 或 map：配置key => 列名）
+        'attributes' => [
+            'client_id',
+            'client_secret',
+            'redirect_uri',
+            'app_id',
+            'app_secret',
+            'api_key',
+            'drive_root_folder',
+            'scopes',
         ],
     ],
 
