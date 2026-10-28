@@ -14,6 +14,7 @@ use Goletter\Docs\Contract\SheetsInterface;
  *
  * @example
  * $docs->platform('google')->auth()->getAuthUrl();
+ * $docs->make('google', ['client_id' => '...', 'client_secret' => '...', 'redirect_uri' => '...']);
  * $docs->platform('tencent')->sheets()->createSpreadsheet($token, '报表');
  * $docs->platform('feishu')->sheets()->createSpreadsheet($token, '报表');
  * $docs->factory()->make('google');
@@ -33,6 +34,16 @@ class DocsManager
     public function platform(?string $name = null): PlatformInterface
     {
         return $this->factory->make($name);
+    }
+
+    /**
+     * 传入平台凭证，返回独立实例（不改全局配置、不走容器单例）.
+     *
+     * @param array<string, mixed> $config
+     */
+    public function make(string $platform, array $config): PlatformInterface
+    {
+        return $this->factory->make($platform, $config);
     }
 
     public function auth(?string $platform = null): AuthInterface

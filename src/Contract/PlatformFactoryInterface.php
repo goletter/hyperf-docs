@@ -8,8 +8,10 @@ interface PlatformFactoryInterface
 {
     /**
      * 按名称创建平台实例；未传则使用默认平台.
+     *
+     * @param array<string, mixed>|null $config 传入则按该凭证新建独立实例（仅内置 google/tencent/feishu）
      */
-    public function make(?string $name = null): PlatformInterface;
+    public function make(?string $name = null, ?array $config = null): PlatformInterface;
 
     /**
      * 是否已注册该平台.

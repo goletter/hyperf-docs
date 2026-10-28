@@ -291,6 +291,43 @@ $file = $this->docs->sheets('feishu')->createSpreadsheet(
 );
 ```
 
+### 传入配置创建实例
+
+业务表里已有 OAuth 应用凭证时，不必依赖全局 `docs.platforms` / 库表，直接传配置拿独立实例（缺的 key 仍回落文件默认）：
+
+```php
+$platform = $this->docs->make('google', [
+    'client_id' => $row['client_id'],
+    'client_secret' => $row['client_secret'],
+    'redirect_uri' => $row['redirect_uri'],
+    'drive_root_folder' => 'Goletter',
+]);
+
+$authUrl = $platform->auth()->getAuthUrl($state);
+$token = $platform->auth()->fetchToken($code);
+
+$file = $platform->sheets()->createSpreadsheet(
+    ['access_token' => $token['access_token']],
+    '报表'
+);
+
+// 飞书
+$feishu = $this->docs->make('feishu', [
+    'app_id' => $row['app_id'],
+    'app_secret' => $row['app_secret'],
+    'redirect_uri' => $row['redirect_uri'],
+]);
+
+// 等价
+$this->factory->make('tencent', [
+    'client_id' => '...',
+    'client_secret' => '...',
+    'redirect_uri' => '...',
+]);
+```
+
+> `make($name, $config)` 仅支持内置 `google` / `tencent` / `feishu`；每次调用新建对象，不污染全局配置与容器单例。用户 `access_token` 仍在调用时传入。
+
 扩展自定义平台：
 
 ```php

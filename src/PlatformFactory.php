@@ -4,11 +4,22 @@ declare(strict_types=1);
 
 namespace Goletter\Docs;
 
+use Goletter\Docs\Config\ArrayPlatformConfigRepository;
+use Goletter\Docs\Contract\PlatformConfigRepositoryInterface;
 use Goletter\Docs\Contract\PlatformFactoryInterface;
 use Goletter\Docs\Contract\PlatformInterface;
+use Goletter\Docs\Feishu\FeishuAuth;
+use Goletter\Docs\Feishu\FeishuClient;
+use Goletter\Docs\Feishu\FeishuSheets;
+use Goletter\Docs\Google\GoogleAuth;
+use Goletter\Docs\Google\GoogleClient;
+use Goletter\Docs\Google\GoogleSheets;
 use Goletter\Docs\Platform\FeishuPlatform;
 use Goletter\Docs\Platform\GooglePlatform;
 use Goletter\Docs\Platform\TencentPlatform;
+use Goletter\Docs\Tencent\TencentAuth;
+use Goletter\Docs\Tencent\TencentClient;
+use Goletter\Docs\Tencent\TencentSheets;
 use Hyperf\Contract\ConfigInterface;
 use InvalidArgumentException;
 use Psr\Container\ContainerInterface;
@@ -20,6 +31,8 @@ use Psr\Container\ContainerInterface;
  * 1. 内置 google / tencent / feishu
  * 2. config docs.platforms 中的 key（需有对应 class，见 platforms_map 或内置）
  * 3. config docs.platforms_map 自定义 class 映射（可覆盖内置）
+ *
+ * make($name) 走容器单例；make($name, $config) 按传入凭证新建独立实例.
  */
 class PlatformFactory implements PlatformFactoryInterface
 {
@@ -44,7 +57,10 @@ class PlatformFactory implements PlatformFactoryInterface
         $this->bootDrivers();
     }
 
-    public function make(?string $name = null): PlatformInterface
+    /**
+     * @param array<string, mixed>|null $config 平台凭证；传则新建实例，不传则用全局配置的容器单例
+     */
+    public function make(?string $name = null, ?array $config = null): PlatformInterface
     {
         $name = $name ?: $this->getDefault();
 
@@ -54,6 +70,10 @@ class PlatformFactory implements PlatformFactoryInterface
                 $name,
                 implode(', ', $this->available())
             ));
+        }
+
+        if ($config !== null) {
+            return $this->makeWithConfig($name, $config);
         }
 
         $platform = $this->container->get($this->drivers[$name]);
@@ -106,6 +126,63 @@ class PlatformFactory implements PlatformFactoryInterface
         }
 
         return $available[0];
+    }
+
+    /**
+     * @param array<string, mixed> $config
+     */
+    protected function makeWithConfig(string $name, array $config): PlatformInterface
+    {
+        if (! isset($this->builtins[$name])) {
+            throw new InvalidArgumentException(sprintf(
+                'make($name, $config) only supports built-in platforms (google / tencent / feishu), got [%s].',
+                $name
+            ));
+        }
+
+        $defaults = $this->config->get("docs.platforms.{$name}", []);
+        if (! is_array($defaults)) {
+            $defaults = [];
+        }
+
+        $repo = new ArrayPlatformConfigRepository($name, array_replace($defaults, $config));
+
+        return match ($name) {
+            GooglePlatform::NAME => $this->buildGoogle($repo),
+            TencentPlatform::NAME => $this->buildTencent($repo),
+            FeishuPlatform::NAME => $this->buildFeishu($repo),
+            default => throw new InvalidArgumentException(sprintf('Unsupported platform [%s].', $name)),
+        };
+    }
+
+    protected function buildGoogle(PlatformConfigRepositoryInterface $repo): GooglePlatform
+    {
+        $client = new GoogleClient($repo);
+
+        return new GooglePlatform(
+            new GoogleAuth($client),
+            new GoogleSheets($client),
+        );
+    }
+
+    protected function buildTencent(PlatformConfigRepositoryInterface $repo): TencentPlatform
+    {
+        $client = new TencentClient($repo);
+
+        return new TencentPlatform(
+            new TencentAuth($client),
+            new TencentSheets($client),
+        );
+    }
+
+    protected function buildFeishu(PlatformConfigRepositoryInterface $repo): FeishuPlatform
+    {
+        $client = new FeishuClient($repo);
+
+        return new FeishuPlatform(
+            new FeishuAuth($client),
+            new FeishuSheets($client),
+        );
     }
 
     protected function bootDrivers(): void
