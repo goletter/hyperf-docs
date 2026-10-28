@@ -18,7 +18,7 @@ class GoogleClient
 {
     public function __construct(
         protected PlatformConfigRepositoryInterface $platformConfig,
-        protected ?RequestLogger $requestLogger = null,
+        protected RequestLogger $requestLogger,
     ) {
     }
 
@@ -77,10 +77,6 @@ class GoogleClient
                 throw new GoogleApiException($e->getMessage(), (int) $e->getCode(), [], $e);
             }
         };
-
-        if ($this->requestLogger === null) {
-            return $run();
-        }
 
         return $this->requestLogger->measure('google', 'SDK', 'google_sdk', $run);
     }

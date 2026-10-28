@@ -21,7 +21,7 @@ class TencentClient
 
     public function __construct(
         protected PlatformConfigRepositoryInterface $platformConfig,
-        protected ?RequestLogger $requestLogger = null,
+        protected RequestLogger $requestLogger,
     ) {
     }
 
@@ -89,10 +89,6 @@ class TencentClient
             return $this->decodeResponse($response);
         };
 
-        if ($this->requestLogger === null) {
-            return $run();
-        }
-
         return $this->requestLogger->measure('tencent', $method, $uri, $run);
     }
 
@@ -120,10 +116,6 @@ class TencentClient
 
             return $this->decodeResponse($response, false);
         };
-
-        if ($this->requestLogger === null) {
-            return $run();
-        }
 
         return $this->requestLogger->measure('tencent', $method, $uri, $run);
     }

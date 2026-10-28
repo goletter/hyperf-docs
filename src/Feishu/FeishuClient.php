@@ -23,7 +23,7 @@ class FeishuClient
 
     public function __construct(
         protected PlatformConfigRepositoryInterface $platformConfig,
-        protected ?RequestLogger $requestLogger = null,
+        protected RequestLogger $requestLogger,
     ) {
     }
 
@@ -82,10 +82,6 @@ class FeishuClient
             return $this->decodeResponse($response);
         };
 
-        if ($this->requestLogger === null) {
-            return $run();
-        }
-
         return $this->requestLogger->measure('feishu', $method, $uri, $run);
     }
 
@@ -116,10 +112,6 @@ class FeishuClient
 
             return $this->decodeResponse($response, true);
         };
-
-        if ($this->requestLogger === null) {
-            return $run();
-        }
 
         return $this->requestLogger->measure('feishu', $method, $uri, $run);
     }
