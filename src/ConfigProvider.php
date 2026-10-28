@@ -7,6 +7,8 @@ namespace Goletter\Docs;
 use Goletter\Docs\Config\PlatformConfigRepositoryFactory;
 use Goletter\Docs\Contract\PlatformConfigRepositoryInterface;
 use Goletter\Docs\Contract\PlatformFactoryInterface;
+use Goletter\Docs\Support\RequestLogger;
+use Goletter\Docs\Support\RequestLoggerFactory;
 
 class ConfigProvider
 {
@@ -15,6 +17,7 @@ class ConfigProvider
         return [
             'dependencies' => [
                 PlatformConfigRepositoryInterface::class => PlatformConfigRepositoryFactory::class,
+                RequestLogger::class => RequestLoggerFactory::class,
                 PlatformFactoryInterface::class => PlatformFactory::class,
                 PlatformFactory::class => PlatformFactory::class,
                 DocsManager::class => DocsManager::class,

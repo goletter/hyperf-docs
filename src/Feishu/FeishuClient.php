@@ -7,6 +7,7 @@ namespace Goletter\Docs\Feishu;
 use Goletter\Docs\Contract\PlatformConfigRepositoryInterface;
 use Goletter\Docs\Feishu\Exceptions\FeishuApiException;
 use Goletter\Docs\Feishu\Exceptions\FeishuTokenExpiredException;
+use Goletter\Docs\Support\RequestLogger;
 use GuzzleHttp\Client as GuzzleClient;
 use GuzzleHttp\Exception\GuzzleException;
 use GuzzleHttp\Exception\RequestException;
@@ -20,8 +21,10 @@ class FeishuClient
 
     protected ?GuzzleClient $http = null;
 
-    public function __construct(protected PlatformConfigRepositoryInterface $platformConfig)
-    {
+    public function __construct(
+        protected PlatformConfigRepositoryInterface $platformConfig,
+        protected ?RequestLogger $requestLogger = null,
+    ) {
     }
 
     public function http(): GuzzleClient
@@ -59,23 +62,31 @@ class FeishuClient
         ?array $json = null,
         array $query = [],
     ): array {
-        $options = [
-            'headers' => $this->authHeaders($accessToken),
-            'query' => $query,
-        ];
-        if ($json !== null) {
-            $options['json'] = $json;
+        $run = function () use ($method, $uri, $accessToken, $json, $query): array {
+            $options = [
+                'headers' => $this->authHeaders($accessToken),
+                'query' => $query,
+            ];
+            if ($json !== null) {
+                $options['json'] = $json;
+            }
+
+            try {
+                $response = $this->http()->request($method, $uri, $options);
+            } catch (RequestException $e) {
+                throw $this->fromRequestException($e);
+            } catch (GuzzleException $e) {
+                throw new FeishuApiException($e->getMessage(), (int) $e->getCode(), [], $e);
+            }
+
+            return $this->decodeResponse($response);
+        };
+
+        if ($this->requestLogger === null) {
+            return $run();
         }
 
-        try {
-            $response = $this->http()->request($method, $uri, $options);
-        } catch (RequestException $e) {
-            throw $this->fromRequestException($e);
-        } catch (GuzzleException $e) {
-            throw new FeishuApiException($e->getMessage(), (int) $e->getCode(), [], $e);
-        }
-
-        return $this->decodeResponse($response);
+        return $this->requestLogger->measure('feishu', $method, $uri, $run);
     }
 
     /**
@@ -88,21 +99,29 @@ class FeishuClient
      */
     public function requestOAuth(string $method, string $uri, array $json = []): array
     {
-        try {
-            $response = $this->http()->request($method, $uri, [
-                'headers' => [
-                    'Content-Type' => 'application/json; charset=utf-8',
-                    'Accept' => 'application/json',
-                ],
-                'json' => $json,
-            ]);
-        } catch (RequestException $e) {
-            throw $this->fromRequestException($e);
-        } catch (GuzzleException $e) {
-            throw new FeishuApiException($e->getMessage(), (int) $e->getCode(), [], $e);
+        $run = function () use ($method, $uri, $json): array {
+            try {
+                $response = $this->http()->request($method, $uri, [
+                    'headers' => [
+                        'Content-Type' => 'application/json; charset=utf-8',
+                        'Accept' => 'application/json',
+                    ],
+                    'json' => $json,
+                ]);
+            } catch (RequestException $e) {
+                throw $this->fromRequestException($e);
+            } catch (GuzzleException $e) {
+                throw new FeishuApiException($e->getMessage(), (int) $e->getCode(), [], $e);
+            }
+
+            return $this->decodeResponse($response, true);
+        };
+
+        if ($this->requestLogger === null) {
+            return $run();
         }
 
-        return $this->decodeResponse($response, true);
+        return $this->requestLogger->measure('feishu', $method, $uri, $run);
     }
 
     public function option(string $key, mixed $default = null): mixed

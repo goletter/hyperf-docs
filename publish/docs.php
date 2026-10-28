@@ -15,43 +15,15 @@ return [
     */
     'config_source' => env('DOCS_CONFIG_SOURCE', 'file'),
 
-    /*
-    |--------------------------------------------------------------------------
-    | 数据库配置（config_source=database 时生效）
-    |--------------------------------------------------------------------------
-    |
-    | 支持两种表结构（优先读 JSON payload；没有或为空则读平铺列）：
-    |
-    | 1) 平铺列（推荐）：
-    | CREATE TABLE docs_platform_configs (
-    |   id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    |   platform VARCHAR(32) NOT NULL DEFAULT '',
-    |   tenant_id VARCHAR(100) NOT NULL DEFAULT '' COMMENT '空 = 全局',
-    |   client_id VARCHAR(100) NOT NULL DEFAULT '',
-    |   client_secret VARCHAR(100) NOT NULL DEFAULT '',
-    |   redirect_uri VARCHAR(100) NOT NULL DEFAULT '',
-    |   remark VARCHAR(200) NULL,
-    |   created_at DATETIME NULL,
-    |   updated_at DATETIME NULL,
-    |   UNIQUE KEY uk_platform_tenant (platform, tenant_id)
-    | );
-    |
-    | 2) JSON 列（兼容旧表）：
-    |   ... + config JSON  —— columns.payload 指向该列
-    |
-    | 多租户：DocsContext::setTenantId($id) 后再调用平台 API。
-    |
-    */
+    // config_source=database：优先 JSON 列（columns.payload），否则读 attributes 平铺列
     'database' => [
         'connection' => env('DOCS_DB_CONNECTION'),
         'table' => env('DOCS_CONFIG_TABLE', 'docs_platform_configs'),
         'columns' => [
             'platform' => 'platform',
             'tenant_id' => 'tenant_id',
-            // JSON 列名；表上没有该列或为空时自动改读 attributes 平铺字段
             'payload' => 'config',
         ],
-        // 平铺列 → 配置 key（list 或 map：配置key => 列名）
         'attributes' => [
             'client_id',
             'client_secret',
@@ -62,6 +34,36 @@ return [
             'drive_root_folder',
             'scopes',
         ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | 请求耗时日志（默认关闭）
+    |--------------------------------------------------------------------------
+    |
+    | enabled=true 时，在 Google / 腾讯 / 飞书 Client 请求出口记录 duration_ms。
+    | 需项目安装 hyperf/logger，并在 config/autoload/logger.php 配置对应 group。
+    |
+    | 示例（独立文件 runtime/logs/docs.log）：
+    | 'docs' => [
+    |     'handlers' => [[
+    |         'class' => Monolog\Handler\RotatingFileHandler::class,
+    |         'constructor' => [
+    |             'filename' => BASE_PATH . '/runtime/logs/docs.log',
+    |             'level' => Monolog\Level::Info,
+    |         ],
+    |     ]],
+    | ],
+    | 然后设 DOCS_LOG_GROUP=docs
+    |
+    | slow_ms > 0 时仅记录耗时达到阈值的成功请求（失败仍会记）.
+    |
+    */
+    'logging' => [
+        'enabled' => (bool) env('DOCS_LOG_ENABLED', false),
+        'name' => env('DOCS_LOG_NAME', 'docs'),
+        'group' => env('DOCS_LOG_GROUP', 'default'),
+        'slow_ms' => (int) env('DOCS_LOG_SLOW_MS', 0),
     ],
 
     /*

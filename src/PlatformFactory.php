@@ -17,6 +17,7 @@ use Goletter\Docs\Google\GoogleSheets;
 use Goletter\Docs\Platform\FeishuPlatform;
 use Goletter\Docs\Platform\GooglePlatform;
 use Goletter\Docs\Platform\TencentPlatform;
+use Goletter\Docs\Support\RequestLogger;
 use Goletter\Docs\Tencent\TencentAuth;
 use Goletter\Docs\Tencent\TencentClient;
 use Goletter\Docs\Tencent\TencentSheets;
@@ -53,6 +54,7 @@ class PlatformFactory implements PlatformFactoryInterface
     public function __construct(
         protected ContainerInterface $container,
         protected ConfigInterface $config,
+        protected RequestLogger $requestLogger,
     ) {
         $this->bootDrivers();
     }
@@ -157,7 +159,7 @@ class PlatformFactory implements PlatformFactoryInterface
 
     protected function buildGoogle(PlatformConfigRepositoryInterface $repo): GooglePlatform
     {
-        $client = new GoogleClient($repo);
+        $client = new GoogleClient($repo, $this->requestLogger);
 
         return new GooglePlatform(
             new GoogleAuth($client),
@@ -167,7 +169,7 @@ class PlatformFactory implements PlatformFactoryInterface
 
     protected function buildTencent(PlatformConfigRepositoryInterface $repo): TencentPlatform
     {
-        $client = new TencentClient($repo);
+        $client = new TencentClient($repo, $this->requestLogger);
 
         return new TencentPlatform(
             new TencentAuth($client),
@@ -177,7 +179,7 @@ class PlatformFactory implements PlatformFactoryInterface
 
     protected function buildFeishu(PlatformConfigRepositoryInterface $repo): FeishuPlatform
     {
-        $client = new FeishuClient($repo);
+        $client = new FeishuClient($repo, $this->requestLogger);
 
         return new FeishuPlatform(
             new FeishuAuth($client),

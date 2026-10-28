@@ -10,13 +10,16 @@ use Google\Service\Exception as GoogleServiceException;
 use Goletter\Docs\Contract\PlatformConfigRepositoryInterface;
 use Goletter\Docs\Google\Exceptions\GoogleApiException;
 use Goletter\Docs\Google\Exceptions\GoogleTokenExpiredException;
+use Goletter\Docs\Support\RequestLogger;
 use GuzzleHttp\Client as GuzzleClient;
 use GuzzleHttp\Exception\RequestException;
 
 class GoogleClient
 {
-    public function __construct(protected PlatformConfigRepositoryInterface $platformConfig)
-    {
+    public function __construct(
+        protected PlatformConfigRepositoryInterface $platformConfig,
+        protected ?RequestLogger $requestLogger = null,
+    ) {
     }
 
     /**
@@ -61,17 +64,25 @@ class GoogleClient
      */
     public function request(callable $callback): mixed
     {
-        try {
-            return $callback();
-        } catch (GoogleApiException $e) {
-            throw $e;
-        } catch (GoogleServiceException $e) {
-            $this->handleServiceException($e);
-        } catch (RequestException $e) {
-            $this->handleRequestException($e);
-        } catch (GoogleException $e) {
-            throw new GoogleApiException($e->getMessage(), (int) $e->getCode(), [], $e);
+        $run = function () use ($callback): mixed {
+            try {
+                return $callback();
+            } catch (GoogleApiException $e) {
+                throw $e;
+            } catch (GoogleServiceException $e) {
+                $this->handleServiceException($e);
+            } catch (RequestException $e) {
+                $this->handleRequestException($e);
+            } catch (GoogleException $e) {
+                throw new GoogleApiException($e->getMessage(), (int) $e->getCode(), [], $e);
+            }
+        };
+
+        if ($this->requestLogger === null) {
+            return $run();
         }
+
+        return $this->requestLogger->measure('google', 'SDK', 'google_sdk', $run);
     }
 
     /**

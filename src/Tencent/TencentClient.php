@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Goletter\Docs\Tencent;
 
 use Goletter\Docs\Contract\PlatformConfigRepositoryInterface;
+use Goletter\Docs\Support\RequestLogger;
 use Goletter\Docs\Tencent\Exceptions\TencentApiException;
 use Goletter\Docs\Tencent\Exceptions\TencentTokenExpiredException;
 use GuzzleHttp\Client as GuzzleClient;
@@ -18,8 +19,10 @@ class TencentClient
 
     protected ?GuzzleClient $http = null;
 
-    public function __construct(protected PlatformConfigRepositoryInterface $platformConfig)
-    {
+    public function __construct(
+        protected PlatformConfigRepositoryInterface $platformConfig,
+        protected ?RequestLogger $requestLogger = null,
+    ) {
     }
 
     public function http(): GuzzleClient
@@ -61,28 +64,36 @@ class TencentClient
         ?array $form = null,
         array $query = [],
     ): array {
-        $options = [
-            'headers' => $this->authHeaders($accessToken, $openId),
-            'query' => $query,
-        ];
+        $run = function () use ($method, $uri, $accessToken, $openId, $json, $form, $query): array {
+            $options = [
+                'headers' => $this->authHeaders($accessToken, $openId),
+                'query' => $query,
+            ];
 
-        if ($json !== null) {
-            $options['headers']['Content-Type'] = 'application/json';
-            $options['json'] = $json;
-        } elseif ($form !== null) {
-            $options['headers']['Content-Type'] = 'application/x-www-form-urlencoded';
-            $options['form_params'] = $form;
+            if ($json !== null) {
+                $options['headers']['Content-Type'] = 'application/json';
+                $options['json'] = $json;
+            } elseif ($form !== null) {
+                $options['headers']['Content-Type'] = 'application/x-www-form-urlencoded';
+                $options['form_params'] = $form;
+            }
+
+            try {
+                $response = $this->http()->request($method, $uri, $options);
+            } catch (RequestException $e) {
+                throw $this->fromRequestException($e);
+            } catch (GuzzleException $e) {
+                throw new TencentApiException($e->getMessage(), (int) $e->getCode(), [], $e);
+            }
+
+            return $this->decodeResponse($response);
+        };
+
+        if ($this->requestLogger === null) {
+            return $run();
         }
 
-        try {
-            $response = $this->http()->request($method, $uri, $options);
-        } catch (RequestException $e) {
-            throw $this->fromRequestException($e);
-        } catch (GuzzleException $e) {
-            throw new TencentApiException($e->getMessage(), (int) $e->getCode(), [], $e);
-        }
-
-        return $this->decodeResponse($response);
+        return $this->requestLogger->measure('tencent', $method, $uri, $run);
     }
 
     /**
@@ -95,18 +106,26 @@ class TencentClient
      */
     public function requestOAuth(string $method, string $uri, array $query = []): array
     {
-        try {
-            $response = $this->http()->request($method, $uri, [
-                'headers' => ['Accept' => 'application/json'],
-                'query' => $query,
-            ]);
-        } catch (RequestException $e) {
-            throw $this->fromRequestException($e);
-        } catch (GuzzleException $e) {
-            throw new TencentApiException($e->getMessage(), (int) $e->getCode(), [], $e);
+        $run = function () use ($method, $uri, $query): array {
+            try {
+                $response = $this->http()->request($method, $uri, [
+                    'headers' => ['Accept' => 'application/json'],
+                    'query' => $query,
+                ]);
+            } catch (RequestException $e) {
+                throw $this->fromRequestException($e);
+            } catch (GuzzleException $e) {
+                throw new TencentApiException($e->getMessage(), (int) $e->getCode(), [], $e);
+            }
+
+            return $this->decodeResponse($response, false);
+        };
+
+        if ($this->requestLogger === null) {
+            return $run();
         }
 
-        return $this->decodeResponse($response, false);
+        return $this->requestLogger->measure('tencent', $method, $uri, $run);
     }
 
     public function option(string $key, mixed $default = null): mixed

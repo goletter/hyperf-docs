@@ -328,6 +328,43 @@ $this->factory->make('tencent', [
 
 > `make($name, $config)` 仅支持内置 `google` / `tencent` / `feishu`；每次调用新建对象，不污染全局配置与容器单例。用户 `access_token` 仍在调用时传入。
 
+### 请求耗时日志
+
+默认关闭。开启后，Google / 腾讯 / 飞书 Client 每次出口请求会写一条耗时日志（不含 token / secret）。
+
+```env
+DOCS_LOG_ENABLED=true
+DOCS_LOG_NAME=docs
+DOCS_LOG_GROUP=docs
+# 仅记录 ≥ 该毫秒的成功请求；失败仍会记。0 = 全部记录
+# DOCS_LOG_SLOW_MS=500
+```
+
+`config/autoload/logger.php` 增加独立 channel（示例）：
+
+```php
+'docs' => [
+    'handlers' => [
+        [
+            'class' => Monolog\Handler\RotatingFileHandler::class,
+            'constructor' => [
+                'filename' => BASE_PATH . '/runtime/logs/docs.log',
+                'level' => Monolog\Level::Info,
+            ],
+        ],
+    ],
+],
+```
+
+并合并 `docs.logging` 到已发布的 `config/autoload/docs.php`（或重新 `vendor:publish`）。需安装 `hyperf/logger`。
+
+日志示例：
+
+```text
+docs.request platform=feishu method=GET uri=/open-apis/sheets/v2/... duration_ms=186 status=ok
+docs.request platform=google method=SDK uri=google_sdk duration_ms=420.5 status=ok
+```
+
 扩展自定义平台：
 
 ```php
@@ -773,23 +810,3 @@ $sheets->shareSpreadsheetForAnyoneReader($tokenPayload, $spreadsheetToken);
 | 添加工作表 | ✅ | ✅ | ✅ sheets_batch_update |
 | 移动到日期目录 | ✅ Drive | ✅ folders + move | ✅ Drive files |
 | 公开只读分享 | ✅ anyone reader | ✅ `publicRead` | ✅ link_share |
-
-## 测试命令
-
-包内自带：
-
-```bash
-# Google
-php bin/hyperf.php docs:test --platform=google --auth-url
-php bin/hyperf.php docs:test --platform=google --token=xxx
-
-# 腾讯文档
-php bin/hyperf.php docs:test --platform=tencent --auth-url
-php bin/hyperf.php docs:test --platform=tencent --token=xxx --open-id=yyy
-
-# 飞书
-php bin/hyperf.php docs:test --platform=feishu --auth-url
-php bin/hyperf.php docs:test --platform=feishu --token=xxx
-```
-
-业务侧也可自建命令，用 `DocsManager` + `appendCells` / `findRows` 做联调。
