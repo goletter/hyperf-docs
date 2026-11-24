@@ -13,12 +13,16 @@ use Goletter\Docs\Google\Exceptions\GoogleTokenExpiredException;
 use Goletter\Docs\Support\RequestLogger;
 use GuzzleHttp\Client as GuzzleClient;
 use GuzzleHttp\Exception\RequestException;
+use Hyperf\Guzzle\ClientFactory;
 
 class GoogleClient
 {
+    protected ?GuzzleClient $http = null;
+
     public function __construct(
         protected PlatformConfigRepositoryInterface $platformConfig,
         protected RequestLogger $requestLogger,
+        protected ClientFactory $clientFactory,
     ) {
     }
 
@@ -113,11 +117,7 @@ class GoogleClient
     protected function createBaseClient(): Client
     {
         $client = new Client();
-        $client->setHttpClient(new GuzzleClient([
-            'headers' => [
-                'Accept-Encoding' => 'identity',
-            ],
-        ]));
+        $client->setHttpClient($this->http());
 
         $apiKey = $this->option('api_key');
         if (is_string($apiKey) && $apiKey !== '') {
@@ -125,6 +125,20 @@ class GoogleClient
         }
 
         return $client;
+    }
+
+    /**
+     * 复用协程安全的 Guzzle 客户端，避免每次 API 调用新建 Curl 句柄.
+     */
+    protected function http(): GuzzleClient
+    {
+        return $this->http ??= $this->clientFactory->create([
+            'headers' => [
+                'Accept-Encoding' => 'identity',
+            ],
+            'timeout' => 30,
+            'http_errors' => false,
+        ]);
     }
 
     public function option(string $key, mixed $default = null): mixed

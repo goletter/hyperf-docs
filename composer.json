@@ -26,7 +26,8 @@
     "guzzlehttp/guzzle": "^7.0",
     "hyperf/context": "~3.1.0",
     "hyperf/contract": "~3.1.0",
-    "hyperf/di": "~3.1.0"
+    "hyperf/di": "~3.1.0",
+    "hyperf/guzzle": "~3.1.0"
   },
   "suggest": {
     "hyperf/database": "Required when docs.config_source=database",

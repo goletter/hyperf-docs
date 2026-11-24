@@ -22,6 +22,7 @@ use Goletter\Docs\Tencent\TencentAuth;
 use Goletter\Docs\Tencent\TencentClient;
 use Goletter\Docs\Tencent\TencentSheets;
 use Hyperf\Contract\ConfigInterface;
+use Hyperf\Guzzle\ClientFactory;
 use InvalidArgumentException;
 use Psr\Container\ContainerInterface;
 
@@ -55,6 +56,7 @@ class PlatformFactory implements PlatformFactoryInterface
         protected ContainerInterface $container,
         protected ConfigInterface $config,
         protected RequestLogger $requestLogger,
+        protected ClientFactory $clientFactory,
     ) {
         $this->bootDrivers();
     }
@@ -159,7 +161,7 @@ class PlatformFactory implements PlatformFactoryInterface
 
     protected function buildGoogle(PlatformConfigRepositoryInterface $repo): GooglePlatform
     {
-        $client = new GoogleClient($repo, $this->requestLogger);
+        $client = new GoogleClient($repo, $this->requestLogger, $this->clientFactory);
 
         return new GooglePlatform(
             new GoogleAuth($client),
@@ -169,7 +171,7 @@ class PlatformFactory implements PlatformFactoryInterface
 
     protected function buildTencent(PlatformConfigRepositoryInterface $repo): TencentPlatform
     {
-        $client = new TencentClient($repo, $this->requestLogger);
+        $client = new TencentClient($repo, $this->requestLogger, $this->clientFactory);
 
         return new TencentPlatform(
             new TencentAuth($client),
@@ -179,7 +181,7 @@ class PlatformFactory implements PlatformFactoryInterface
 
     protected function buildFeishu(PlatformConfigRepositoryInterface $repo): FeishuPlatform
     {
-        $client = new FeishuClient($repo, $this->requestLogger);
+        $client = new FeishuClient($repo, $this->requestLogger, $this->clientFactory);
 
         return new FeishuPlatform(
             new FeishuAuth($client),

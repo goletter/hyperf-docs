@@ -11,6 +11,7 @@ use Goletter\Docs\Tencent\Exceptions\TencentTokenExpiredException;
 use GuzzleHttp\Client as GuzzleClient;
 use GuzzleHttp\Exception\GuzzleException;
 use GuzzleHttp\Exception\RequestException;
+use Hyperf\Guzzle\ClientFactory;
 use Psr\Http\Message\ResponseInterface;
 
 class TencentClient
@@ -22,12 +23,13 @@ class TencentClient
     public function __construct(
         protected PlatformConfigRepositoryInterface $platformConfig,
         protected RequestLogger $requestLogger,
+        protected ClientFactory $clientFactory,
     ) {
     }
 
     public function http(): GuzzleClient
     {
-        return $this->http ??= new GuzzleClient([
+        return $this->http ??= $this->clientFactory->create([
             'base_uri' => self::BASE_URI,
             'timeout' => 30,
             'http_errors' => false,
