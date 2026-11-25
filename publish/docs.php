@@ -33,6 +33,8 @@ return [
             'api_key',
             'drive_root_folder',
             'scopes',
+            'timeout',
+            'connect_timeout',
         ],
     ],
 
@@ -84,6 +86,9 @@ return [
             'redirect_uri' => env('GOOGLE_REDIRECT_URI'),
             'api_key' => env('GOOGLE_API_KEY'),
             'drive_root_folder' => env('GOOGLE_DRIVE_ROOT_FOLDER_NAME', 'Goletter'),
+            // HTTP 超时（秒）；大表 / 弱网可调大，也可 make() 时传入
+            'timeout' => (float) env('GOOGLE_DOCS_TIMEOUT', 60),
+            'connect_timeout' => (float) env('GOOGLE_DOCS_CONNECT_TIMEOUT', 10),
             'scopes' => [
                 'https://www.googleapis.com/auth/documents',
                 'https://www.googleapis.com/auth/drive.file',
@@ -96,6 +101,8 @@ return [
             'client_secret' => env('TENCENT_DOCS_CLIENT_SECRET'),
             'redirect_uri' => env('TENCENT_DOCS_REDIRECT_URI'),
             'drive_root_folder' => env('TENCENT_DOCS_DRIVE_ROOT_FOLDER_NAME', 'Goletter'),
+            'timeout' => (float) env('TENCENT_DOCS_TIMEOUT', 60),
+            'connect_timeout' => (float) env('TENCENT_DOCS_CONNECT_TIMEOUT', 10),
             // 授权 scope，all 表示申请应用已开通的全部权限；也可按需配置为逗号分隔字符串
             'scopes' => env('TENCENT_DOCS_SCOPES', 'all'),
         ],
@@ -106,6 +113,8 @@ return [
             'app_secret' => env('FEISHU_APP_SECRET'),
             'redirect_uri' => env('FEISHU_REDIRECT_URI'),
             'drive_root_folder' => env('FEISHU_DRIVE_ROOT_FOLDER_NAME', 'Goletter'),
+            'timeout' => (float) env('FEISHU_DOCS_TIMEOUT', 60),
+            'connect_timeout' => (float) env('FEISHU_DOCS_CONNECT_TIMEOUT', 10),
             // 空格或逗号分隔；offline_access 用于拿到 refresh_token
             'scopes' => env(
                 'FEISHU_SCOPES',

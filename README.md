@@ -96,6 +96,8 @@ return [
             'redirect_uri' => env('GOOGLE_REDIRECT_URI'),
             'api_key' => env('GOOGLE_API_KEY'),
             'drive_root_folder' => env('GOOGLE_DRIVE_ROOT_FOLDER_NAME', 'Goletter'),
+            'timeout' => (float) env('GOOGLE_DOCS_TIMEOUT', 60),
+            'connect_timeout' => (float) env('GOOGLE_DOCS_CONNECT_TIMEOUT', 10),
             'scopes' => [
                 'https://www.googleapis.com/auth/documents',
                 'https://www.googleapis.com/auth/drive.file',
@@ -107,6 +109,8 @@ return [
             'client_secret' => env('TENCENT_DOCS_CLIENT_SECRET'),
             'redirect_uri' => env('TENCENT_DOCS_REDIRECT_URI'),
             'drive_root_folder' => env('TENCENT_DOCS_DRIVE_ROOT_FOLDER_NAME', 'Goletter'),
+            'timeout' => (float) env('TENCENT_DOCS_TIMEOUT', 60),
+            'connect_timeout' => (float) env('TENCENT_DOCS_CONNECT_TIMEOUT', 10),
             // OAuth 文档要求 scope 固定为 all；实际权限以开放平台已开通权限为准
             'scopes' => env('TENCENT_DOCS_SCOPES', 'all'),
         ],
@@ -115,10 +119,24 @@ return [
             'app_secret' => env('FEISHU_APP_SECRET'),
             'redirect_uri' => env('FEISHU_REDIRECT_URI'),
             'drive_root_folder' => env('FEISHU_DRIVE_ROOT_FOLDER_NAME', 'Goletter'),
+            'timeout' => (float) env('FEISHU_DOCS_TIMEOUT', 60),
+            'connect_timeout' => (float) env('FEISHU_DOCS_CONNECT_TIMEOUT', 10),
             'scopes' => env('FEISHU_SCOPES', 'sheets:spreadsheet drive:drive offline_access'),
         ],
     ],
 ];
+```
+
+HTTP 超时（秒）默认 `timeout=60`、`connect_timeout=10`；遇 `cURL error 28` 可调大，或 `make()` 时传入：
+
+```php
+$docs->make('google', [
+    'client_id' => '...',
+    'client_secret' => '...',
+    'redirect_uri' => '...',
+    'timeout' => 120,
+    'connect_timeout' => 15,
+]);
 ```
 
 ### 从数据库读取平台凭证（使用说明）
@@ -225,6 +243,8 @@ GOOGLE_CLIENT_SECRET=
 GOOGLE_REDIRECT_URI=
 GOOGLE_API_KEY=
 GOOGLE_DRIVE_ROOT_FOLDER_NAME=Goletter
+GOOGLE_DOCS_TIMEOUT=60
+GOOGLE_DOCS_CONNECT_TIMEOUT=10
 GOOGLE_TOKEN=
 GOOGLE_REFRESH_TOKEN=
 GOOGLE_SPREADSHEET_ID=
@@ -234,6 +254,8 @@ TENCENT_DOCS_CLIENT_ID=
 TENCENT_DOCS_CLIENT_SECRET=
 TENCENT_DOCS_REDIRECT_URI=
 TENCENT_DOCS_DRIVE_ROOT_FOLDER_NAME=Goletter
+TENCENT_DOCS_TIMEOUT=60
+TENCENT_DOCS_CONNECT_TIMEOUT=10
 TENCENT_DOCS_SCOPES=all
 TENCENT_DOCS_TOKEN=
 TENCENT_DOCS_OPEN_ID=
@@ -243,6 +265,8 @@ FEISHU_APP_ID=
 FEISHU_APP_SECRET=
 FEISHU_REDIRECT_URI=
 FEISHU_DRIVE_ROOT_FOLDER_NAME=Goletter
+FEISHU_DOCS_TIMEOUT=60
+FEISHU_DOCS_CONNECT_TIMEOUT=10
 FEISHU_SCOPES=sheets:spreadsheet drive:drive offline_access
 FEISHU_TOKEN=
 FEISHU_REFRESH_TOKEN=

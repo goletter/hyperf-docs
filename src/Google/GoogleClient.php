@@ -136,9 +136,20 @@ class GoogleClient
             'headers' => [
                 'Accept-Encoding' => 'identity',
             ],
-            'timeout' => 30,
+            'timeout' => $this->httpTimeout(),
+            'connect_timeout' => $this->httpConnectTimeout(),
             'http_errors' => false,
         ]);
+    }
+
+    protected function httpTimeout(): float
+    {
+        return max(1.0, (float) $this->option('timeout', 60));
+    }
+
+    protected function httpConnectTimeout(): float
+    {
+        return max(1.0, (float) $this->option('connect_timeout', 10));
     }
 
     public function option(string $key, mixed $default = null): mixed
